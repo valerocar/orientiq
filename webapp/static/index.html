@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orient-Opt Viewer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1a1a2e; color: #eee; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+
+.toolbar {
+    display: flex; align-items: center; gap: 10px; padding: 8px 16px;
+    background: #16213e; border-bottom: 1px solid #0f3460; flex-wrap: wrap;
+}
+.toolbar select, .toolbar button {
+    padding: 5px 12px; border-radius: 4px; border: 1px solid #0f3460;
+    background: #1a1a2e; color: #eee; font-size: 12px; cursor: pointer;
+}
+.toolbar button:hover { background: #0f3460; }
+.toolbar button:disabled { opacity: 0.4; cursor: default; }
+.toolbar .active { background: #0f3460; border-color: #e94560; }
+.model-info { flex: 1; text-align: center; font-size: 13px; }
+.model-name { font-weight: 700; }
+.model-faces { color: #888; font-size: 11px; }
+.mode-group, .pair-group { display: flex; gap: 6px; align-items: center; }
+.pair-group label { font-size: 11px; color: #888; }
+.hidden { display: none !important; }
+
+.panels { display: flex; flex: 1; }
+.panel { flex: 1; position: relative; border-right: 1px solid #0f3460; }
+.panel:last-child { border-right: none; }
+.panel canvas { width: 100% !important; height: 100% !important; display: block; }
+.panel-label {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.7); padding: 5px 12px; border-radius: 4px;
+    font-size: 11px; z-index: 10; text-align: center; pointer-events: none;
+    max-width: 90%;
+}
+.panel-label .value { font-weight: 700; font-size: 13px; }
+.loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    font-size: 13px; color: #888; z-index: 20;
+}
+.sphere-overlay {
+    position: absolute; top: 8px; left: 8px; width: 220px; height: 220px;
+    z-index: 15; border-radius: 8px; overflow: hidden;
+    background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.1);
+}
+.sphere-overlay canvas { width: 100% !important; height: 100% !important; display: block; }
+.sphere-overlay-label {
+    position: absolute; bottom: 4px; left: 0; right: 0; text-align: center;
+    font-size: 9px; color: rgba(255,255,255,0.6); pointer-events: none;
+}
+.sphere-tooltip {
+    position: absolute; pointer-events: none; z-index: 30;
+    background: rgba(0,0,0,0.85); color: #eee; padding: 4px 8px;
+    border-radius: 4px; font-size: 10px; white-space: nowrap;
+    display: none;
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <div class="mode-group">
+        <button id="btn-single" class="active">Single</button>
+        <button id="btn-pair">Pair</button>
+    </div>
+    <button id="btn-back" disabled>&larr;</button>
+    <button id="btn-next" disabled>&rarr;</button>
+    <div class="model-info">
+        <span class="model-name" id="model-name">Loading...</span>
+        <span class="model-faces" id="model-faces"></span>
+    </div>
+    <!-- Single mode controls -->
+    <select id="objective-select">
+        <option value="support_volume">Support Volume</option>
+        <option value="overhang">Overhang Area</option>
+        <option value="build_height">Build Height</option>
+        <option value="surface_quality">Surface Quality</option>
+        <option value="stability">Stability</option>
+    </select>
+    <!-- Pair mode controls -->
+    <div class="pair-group hidden" id="pair-controls">
+        <label>A:</label>
+        <select id="obj-a">
+            <option value="overhang">Overhang</option>
+            <option value="support_volume">Sup. Volume</option>
+            <option value="build_height">Height</option>
+            <option value="surface_quality">Surf. Quality</option>
+            <option value="stability">Stability</option>
+        </select>
+        <label>B:</label>
+        <select id="obj-b">
+            <option value="build_height">Height</option>
+            <option value="overhang">Overhang</option>
+            <option value="support_volume">Sup. Volume</option>
+            <option value="surface_quality">Surf. Quality</option>
+            <option value="stability">Stability</option>
+        </select>
+    </div>
+</div>
+
+<div class="panels">
+    <div class="panel" id="panel-left">
+        <div class="panel-label" id="label-left">Original</div>
+        <div class="loading" id="loading-left" style="display:none">Loading...</div>
+    </div>
+    <div class="panel" id="panel-right">
+        <div class="panel-label" id="label-right">Optimized</div>
+        <div class="loading" id="loading-right" style="display:none">Optimizing...</div>
+        <div class="sphere-overlay" id="sphere-overlay" style="display:none">
+            <div class="sphere-overlay-label" id="sphere-overlay-label"></div>
+            <div class="sphere-tooltip" id="sphere-tooltip"></div>
+        </div>
+    </div>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+// ---- Binary parsers ----
+function parseMeshBinary(buffer) {
+    const view = new DataView(buffer);
+    let off = 0;
+    const u32 = () => { const v = view.getUint32(off, true); off += 4; return v; };
+    const f32 = () => { const v = view.getFloat32(off, true); off += 4; return v; };
+
+    const nVerts = u32(), nFaces = u32(), nOh = u32(), nPillars = u32();
+    const nFacesOrig = u32(), extraCount = u32(); u32();
+    const extra = []; for (let i = 0; i < extraCount; i++) extra.push(f32());
+    const zMin = f32();
+    const vertices = new Float32Array(buffer, off, nVerts * 3); off += nVerts * 12;
+    const faces = new Int32Array(buffer, off, nFaces * 3); off += nFaces * 12;
+    const normals = new Float32Array(buffer, off, nFaces * 3); off += nFaces * 12;
+    const ohIndices = new Int32Array(buffer, off, nOh); off += nOh * 4;
+    const pillarCentroids = nPillars > 0 ? new Float32Array(buffer, off, nPillars * 3) : new Float32Array(0);
+    return { nVerts, nFaces, nFacesOrig, vertices, faces, normals, ohIndices, pillarCentroids, zMin, extra };
+}
+
+function parseParetoBinary(buffer) {
+    const view = new DataView(buffer);
+    let off = 0;
+    const u32 = () => { const v = view.getUint32(off, true); off += 4; return v; };
+    const nCand = u32(), nPareto = u32(), nFaces = u32(), nFacesOrig = u32();
+    u32(); u32(); u32(); // reserved
+    const gravities = new Float32Array(buffer, off, nCand * 3); off += nCand * 12;
+    const objValues = new Float32Array(buffer, off, nCand * 2); off += nCand * 8;
+    const paretoIdx = new Int32Array(buffer, off, nPareto); off += nPareto * 4;
+    const faceFlags = new Uint8Array(buffer, off, nFaces); off += nFaces;
+    return { nCand, nPareto, nFaces, nFacesOrig, gravities, objValues, paretoIdx, faceFlags };
+}
+
+// ---- Objective sphere overlay ----
+const ICO_DETAIL = 5; // subdivision level → ~10k vertices
+const N_LEVELS = 15;
+let overlayState = null;
+let cachedLeftMeshData = null; // {nFaces, nVerts, normals, vertices, areas, centroids}
+
+function viridis(t) {
+    t = Math.max(0, Math.min(1, t));
+    // 5-stop viridis approximation
+    const stops = [
+        [0.267, 0.004, 0.329],
+        [0.282, 0.140, 0.458],
+        [0.127, 0.566, 0.551],
+        [0.741, 0.873, 0.150],
+        [0.993, 0.906, 0.144],
+    ];
+    const s = t * (stops.length - 1);
+    const i = Math.min(Math.floor(s), stops.length - 2);
+    const f = s - i;
+    return [
+        stops[i][0] + f * (stops[i+1][0] - stops[i][0]),
+        stops[i][1] + f * (stops[i+1][1] - stops[i][1]),
+        stops[i][2] + f * (stops[i+1][2] - stops[i][2]),
+    ];
+}
+
+function prepareMeshArrays(d) {
+    const nF = d.nFaces, nV = d.nVerts;
+    const areas = new Float32Array(nF);
+    const centroids = new Float32Array(nF * 3);
+    for (let f = 0; f < nF; f++) {
+        const i0 = d.faces[f*3], i1 = d.faces[f*3+1], i2 = d.faces[f*3+2];
+        const ax = d.vertices[i1*3]-d.vertices[i0*3], ay = d.vertices[i1*3+1]-d.vertices[i0*3+1], az = d.vertices[i1*3+2]-d.vertices[i0*3+2];
+        const bx = d.vertices[i2*3]-d.vertices[i0*3], by = d.vertices[i2*3+1]-d.vertices[i0*3+1], bz = d.vertices[i2*3+2]-d.vertices[i0*3+2];
+        const cx = ay*bz-az*by, cy = az*bx-ax*bz, cz = ax*by-ay*bx;
+        areas[f] = 0.5 * Math.sqrt(cx*cx + cy*cy + cz*cz);
+        centroids[f*3]   = (d.vertices[i0*3]   + d.vertices[i1*3]   + d.vertices[i2*3])   / 3;
+        centroids[f*3+1] = (d.vertices[i0*3+1] + d.vertices[i1*3+1] + d.vertices[i2*3+1]) / 3;
+        centroids[f*3+2] = (d.vertices[i0*3+2] + d.vertices[i1*3+2] + d.vertices[i2*3+2]) / 3;
+    }
+    return { nFaces: nF, nVerts: nV, normals: d.normals, vertices: d.vertices, faces: d.faces, areas, centroids };
+}
+
+function evalObjective(obj, gx, gy, gz, m) {
+    const thresh = -Math.cos(45 * Math.PI / 180);
+    if (obj === 'overhang') {
+        let s = 0;
+        for (let f = 0; f < m.nFaces; f++) {
+            if (gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2] < thresh) s += m.areas[f];
+        }
+        return s;
+    }
+    if (obj === 'build_height') {
+        let lo = Infinity, hi = -Infinity;
+        for (let v = 0; v < m.nVerts; v++) {
+            const p = gx*m.vertices[v*3] + gy*m.vertices[v*3+1] + gz*m.vertices[v*3+2];
+            if (p < lo) lo = p; if (p > hi) hi = p;
+        }
+        return hi - lo;
+    }
+    if (obj === 'support_volume') {
+        let lo = Infinity;
+        for (let v = 0; v < m.nVerts; v++) {
+            const p = gx*m.vertices[v*3] + gy*m.vertices[v*3+1] + gz*m.vertices[v*3+2];
+            if (p < lo) lo = p;
+        }
+        let s = 0;
+        for (let f = 0; f < m.nFaces; f++) {
+            if (gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2] < thresh) {
+                const ch = gx*m.centroids[f*3] + gy*m.centroids[f*3+1] + gz*m.centroids[f*3+2] - lo;
+                s += m.areas[f] * ch;
+            }
+        }
+        return s;
+    }
+    if (obj === 'surface_quality') {
+        let s = 0;
+        for (let f = 0; f < m.nFaces; f++) {
+            const dot = gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2];
+            const p = 1 - Math.abs(dot);
+            s += p * p * m.areas[f];
+        }
+        return s;
+    }
+    // stability fallback: use build height as proxy
+    return evalObjective('build_height', gx, gy, gz, m);
+}
+
+function initOverlay() {
+    const container = document.getElementById('sphere-overlay');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setClearColor(0x000000, 0);
+    container.insertBefore(renderer.domElement, container.firstChild);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+    camera.up.set(0, 0, 1);
+    camera.position.set(2, 2, 1.5);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+    controls.enablePan = false;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const d1 = new THREE.DirectionalLight(0xffffff, 0.5); d1.position.set(5, 5, 10); scene.add(d1);
+
+    overlayState = { renderer, scene, camera, controls, group: null, marker: null };
+    resizeOverlay();
+
+    // Double-click on sphere → rotate optimized model to that gravity direction
+    const overlayRaycaster = new THREE.Raycaster();
+    const overlayMouse = new THREE.Vector2();
+    renderer.domElement.addEventListener('dblclick', async (e) => {
+        if (mode !== 'single' || !overlayState.group) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        overlayMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        overlayMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        overlayRaycaster.setFromCamera(overlayMouse, camera);
+        const sphereMesh = overlayState.group.getObjectByName('objSphere');
+        if (!sphereMesh) return;
+        const hits = overlayRaycaster.intersectObject(sphereMesh);
+        if (hits.length === 0) return;
+
+        // Snap to nearest critical point
+        const p = hits[0].point;
+        const critPts = overlayState.group.userData.critPts;
+        if (!critPts || critPts.length === 0) return;
+        let bestDist = Infinity, bestCp = null;
+        for (const cp of critPts) {
+            const dx = p.x - cp.pos[0], dy = p.y - cp.pos[1], dz = p.z - cp.pos[2];
+            const d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 < bestDist) { bestDist = d2; bestCp = cp; }
+        }
+        const gx = bestCp.pos[0]/1.03, gy = bestCp.pos[1]/1.03, gz = bestCp.pos[2]/1.03;
+
+        // Move marker to snapped critical point
+        moveMarker(bestCp.pos[0], bestCp.pos[1], bestCp.pos[2]);
+
+        const name = models[currentIndex].name;
+        document.getElementById('loading-right').style.display = '';
+        document.getElementById('label-right').innerHTML = 'Rotating...';
+
+        const buf = await (await fetch('/api/rotate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: name, gravity: [gx, gy, gz] }),
+        })).arrayBuffer();
+        const d = parseMeshBinary(buf);
+        showMesh('panel-right', d);
+
+        // Evaluate objective at this direction
+        const objective = document.getElementById('objective-select').value;
+        const val = evalObjective(objective, gx, gy, gz, cachedLeftMeshData);
+        const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+        document.getElementById('label-right').innerHTML =
+            `${pretty[objective]}: <span class="value">${val.toFixed(2)}</span><br><span style="font-size:10px">g=[${gx.toFixed(2)}, ${gy.toFixed(2)}, ${gz.toFixed(2)}]</span>`;
+        document.getElementById('loading-right').style.display = 'none';
+    });
+
+    // Hover over critical points → show tooltip
+    const hoverRaycaster = new THREE.Raycaster();
+    const hoverMouse = new THREE.Vector2();
+    const tooltip = document.getElementById('sphere-tooltip');
+
+    renderer.domElement.addEventListener('mousemove', (e) => {
+        if (!overlayState.group) { tooltip.style.display = 'none'; return; }
+        const critGroup = overlayState.group.getObjectByName('critPoints');
+        if (!critGroup || critGroup.children.length === 0) { tooltip.style.display = 'none'; return; }
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        hoverMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        hoverMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        hoverRaycaster.setFromCamera(hoverMouse, camera);
+        const hits = hoverRaycaster.intersectObjects(critGroup.children);
+        if (hits.length === 0) { tooltip.style.display = 'none'; return; }
+
+        const pi = hits[0].object.userData.critIdx;
+        const cp = overlayState.group.userData.critPts[pi];
+        const names = overlayState.group.userData.critNames;
+        tooltip.textContent = `${names[cp.type]}: ${cp.value.toFixed(3)}`;
+        const overlayRect = document.getElementById('sphere-overlay').getBoundingClientRect();
+        tooltip.style.left = (e.clientX - overlayRect.left + 10) + 'px';
+        tooltip.style.top = (e.clientY - overlayRect.top - 20) + 'px';
+        tooltip.style.display = '';
+    });
+
+    renderer.domElement.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+    });
+}
+
+function resizeOverlay() {
+    if (!overlayState) return;
+    const c = document.getElementById('sphere-overlay');
+    const w = c.clientWidth, h = c.clientHeight;
+    if (w === 0 || h === 0) return;
+    overlayState.renderer.setSize(w, h);
+    overlayState.camera.aspect = w / h;
+    overlayState.camera.updateProjectionMatrix();
+}
+
+function clearOverlay() {
+    if (!overlayState) return;
+    if (overlayState.group) {
+        overlayState.scene.remove(overlayState.group);
+        overlayState.group.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+        overlayState.group = null;
+    }
+    if (overlayState.marker) {
+        overlayState.scene.remove(overlayState.marker);
+        overlayState.marker.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+        overlayState.marker = null;
+    }
+}
+
+function buildObjectiveSphere(meshData, objective) {
+    const group = new THREE.Group();
+    const geom = BufferGeometryUtils.mergeVertices(new THREE.IcosahedronGeometry(1, ICO_DETAIL));
+    const pos = geom.attributes.position;
+    const nV = pos.count;
+
+    // Evaluate objective at each sphere vertex
+    const values = new Float32Array(nV);
+    let vMin = Infinity, vMax = -Infinity, bestIdx = 0;
+    for (let i = 0; i < nV; i++) {
+        const val = evalObjective(objective, pos.getX(i), pos.getY(i), pos.getZ(i), meshData);
+        values[i] = val;
+        if (val < vMin) { vMin = val; bestIdx = i; }
+        if (val > vMax) vMax = val;
+    }
+
+    // Color vertices
+    const range = vMax - vMin || 1;
+    const colors = new Float32Array(nV * 3);
+    for (let i = 0; i < nV; i++) {
+        const t = (values[i] - vMin) / range;
+        const [r, g, b] = viridis(t);
+        colors[i*3] = r; colors[i*3+1] = g; colors[i*3+2] = b;
+    }
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const sphereMesh = new THREE.Mesh(geom, new THREE.MeshPhongMaterial({
+        vertexColors: true, side: THREE.DoubleSide,
+    }));
+    sphereMesh.name = 'objSphere';
+    group.add(sphereMesh);
+
+    // Contour lines via marching triangles
+    const levels = [];
+    for (let i = 1; i <= N_LEVELS; i++) levels.push(vMin + (range * i) / (N_LEVELS + 1));
+
+    const idx = geom.index;
+    const nTris = idx ? idx.count / 3 : nV / 3;
+    const lp = []; // line positions
+    for (let t = 0; t < nTris; t++) {
+        const ia = idx ? idx.getX(t*3) : t*3;
+        const ib = idx ? idx.getX(t*3+1) : t*3+1;
+        const ic = idx ? idx.getX(t*3+2) : t*3+2;
+        const va = values[ia], vb = values[ib], vc = values[ic];
+        const pa = [pos.getX(ia), pos.getY(ia), pos.getZ(ia)];
+        const pb = [pos.getX(ib), pos.getY(ib), pos.getZ(ib)];
+        const pc = [pos.getX(ic), pos.getY(ic), pos.getZ(ic)];
+
+        for (const lev of levels) {
+            const cross = [];
+            const edges = [[va,vb,pa,pb],[vb,vc,pb,pc],[vc,va,pc,pa]];
+            for (const [v0,v1,p0,p1] of edges) {
+                if ((v0 - lev) * (v1 - lev) < 0) {
+                    const f = (lev - v0) / (v1 - v0);
+                    const x = p0[0]+f*(p1[0]-p0[0]), y = p0[1]+f*(p1[1]-p0[1]), z = p0[2]+f*(p1[2]-p0[2]);
+                    const len = Math.sqrt(x*x+y*y+z*z);
+                    cross.push(x*1.005/len, y*1.005/len, z*1.005/len);
+                }
+            }
+            if (cross.length === 6) lp.push(...cross);
+        }
+    }
+    if (lp.length > 0) {
+        const lg = new THREE.BufferGeometry();
+        lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+        group.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x000000, opacity: 0.5, transparent: true, linewidth: 1 })));
+    }
+
+    // --- Critical point detection via discrete Morse theory ---
+    // Build 1-ring adjacency with cyclic ordering
+    const adjMap = new Map(); // vertex index -> Set of neighbor indices
+    const triAdj = new Map(); // vertex index -> array of [neighbor, neighbor] pairs from triangles
+    for (let t = 0; t < nTris; t++) {
+        const ia = idx ? idx.getX(t*3) : t*3;
+        const ib = idx ? idx.getX(t*3+1) : t*3+1;
+        const ic = idx ? idx.getX(t*3+2) : t*3+2;
+        for (const [v, a, b] of [[ia,ib,ic],[ib,ic,ia],[ic,ia,ib]]) {
+            if (!adjMap.has(v)) { adjMap.set(v, new Set()); triAdj.set(v, []); }
+            adjMap.get(v).add(a);
+            adjMap.get(v).add(b);
+            triAdj.get(v).push([a, b]);
+        }
+    }
+
+    // Order neighbors cyclically around each vertex using triangle fan
+    function cyclicNeighbors(v) {
+        const tris = triAdj.get(v);
+        if (!tris || tris.length === 0) return [];
+        const ordered = [tris[0][0], tris[0][1]];
+        const used = new Set([0]);
+        for (let iter = 0; iter < tris.length - 1; iter++) {
+            const last = ordered[ordered.length - 1];
+            let found = false;
+            for (let j = 0; j < tris.length; j++) {
+                if (used.has(j)) continue;
+                const [a, b] = tris[j];
+                if (a === last) { ordered.push(b); used.add(j); found = true; break; }
+                if (b === last) { ordered.push(a); used.add(j); found = true; break; }
+            }
+            if (!found) break;
+        }
+        // Remove duplicate of first if cycle closes
+        if (ordered.length > 1 && ordered[ordered.length-1] === ordered[0]) ordered.pop();
+        return ordered;
+    }
+
+    // Classify each vertex
+    const CRIT_MIN = 0, CRIT_MAX = 1, CRIT_SADDLE = 2;
+    const critPts = []; // {idx, type, value, pos}
+    for (const [v, neighbors] of adjMap) {
+        const allNeighbors = [...neighbors]; // complete unordered set from adjMap
+        if (allNeighbors.length < 3) continue;
+        const fv = values[v];
+
+        // Min/max: use complete neighbor set (no cyclic ordering needed)
+        const allGe = allNeighbors.every(n => values[n] >= fv);
+        const someGt = allNeighbors.some(n => values[n] > fv);
+        const allLe = allNeighbors.every(n => values[n] <= fv);
+        const someLt = allNeighbors.some(n => values[n] < fv);
+
+        let type = -1;
+        if (allGe && someGt) type = CRIT_MIN;
+        else if (allLe && someLt) type = CRIT_MAX;
+        else {
+            // Saddle: needs cyclic ordering for sign-change counting
+            const ring = cyclicNeighbors(v);
+            if (ring.length >= 3) {
+                let signChanges = 0, lastSign = 0;
+                for (let i = 0; i < ring.length; i++) {
+                    const d = values[ring[i]] - fv;
+                    if (d !== 0) { lastSign = d > 0 ? 1 : -1; break; }
+                }
+                if (lastSign !== 0) {
+                    for (let i = 0; i < ring.length; i++) {
+                        const d = values[ring[i]] - fv;
+                        if (d === 0) continue;
+                        const s = d > 0 ? 1 : -1;
+                        if (s !== lastSign) signChanges++;
+                        lastSign = s;
+                    }
+                }
+                if (signChanges >= 4) type = CRIT_SADDLE;
+            }
+        }
+        if (type >= 0) {
+            critPts.push({
+                idx: v, type, value: fv,
+                pos: [pos.getX(v)*1.03, pos.getY(v)*1.03, pos.getZ(v)*1.03]
+            });
+        }
+    }
+
+    // --- Face-based critical point detection (dual mesh) ---
+    // Catches extrema that fall inside triangles, not at vertices
+    // Build face adjacency: for each triangle, find neighbors sharing an edge
+    const edgeToTri = new Map(); // "min_max" -> [triIdx, ...]
+    const triVals = new Float32Array(nTris); // average value per triangle
+    const triCentroids = []; // centroid position per triangle
+    for (let t = 0; t < nTris; t++) {
+        const ia = idx.getX(t*3), ib = idx.getX(t*3+1), ic = idx.getX(t*3+2);
+        triVals[t] = (values[ia] + values[ib] + values[ic]) / 3;
+        const cx = (pos.getX(ia)+pos.getX(ib)+pos.getX(ic))/3;
+        const cy = (pos.getY(ia)+pos.getY(ib)+pos.getY(ic))/3;
+        const cz = (pos.getZ(ia)+pos.getZ(ib)+pos.getZ(ic))/3;
+        const cl = Math.sqrt(cx*cx+cy*cy+cz*cz);
+        triCentroids.push([cx*1.03/cl, cy*1.03/cl, cz*1.03/cl]);
+        // Register edges
+        const verts = [ia, ib, ic];
+        for (let e = 0; e < 3; e++) {
+            const a = verts[e], b = verts[(e+1)%3];
+            const key = Math.min(a,b) + '_' + Math.max(a,b);
+            if (!edgeToTri.has(key)) edgeToTri.set(key, []);
+            edgeToTri.get(key).push(t);
+        }
+    }
+    // Build triangle neighbor list
+    const triNeighbors = new Array(nTris);
+    for (let t = 0; t < nTris; t++) triNeighbors[t] = new Set();
+    for (const tris of edgeToTri.values()) {
+        if (tris.length === 2) {
+            triNeighbors[tris[0]].add(tris[1]);
+            triNeighbors[tris[1]].add(tris[0]);
+        }
+    }
+    // Detect face-level extrema
+    for (let t = 0; t < nTris; t++) {
+        const nbrs = [...triNeighbors[t]];
+        if (nbrs.length < 2) continue;
+        const tv = triVals[t];
+        const allGe = nbrs.every(n => triVals[n] >= tv);
+        const someGt = nbrs.some(n => triVals[n] > tv);
+        const allLe = nbrs.every(n => triVals[n] <= tv);
+        const someLt = nbrs.some(n => triVals[n] < tv);
+        // Only add if no vertex-level critical point already nearby
+        const cp = triCentroids[t];
+        const alreadyFound = critPts.some(p => {
+            const dx=p.pos[0]-cp[0], dy=p.pos[1]-cp[1], dz=p.pos[2]-cp[2];
+            return dx*dx+dy*dy+dz*dz < 0.005;
+        });
+        if (alreadyFound) continue;
+        let type = -1;
+        if (allGe && someGt) type = CRIT_MIN;
+        else if (allLe && someLt) type = CRIT_MAX;
+        if (type >= 0) {
+            critPts.push({ idx: -1, type, value: tv, pos: cp });
+        }
+    }
+
+    // Build critical point markers as small spheres
+    const CRIT_COLORS = [
+        0x00cc33,  // min: green
+        0x3366ff,  // max: blue
+        0xffdd00,  // saddle: yellow
+    ];
+    const CRIT_NAMES = ['Minimum', 'Maximum', 'Saddle'];
+    const critGroup = new THREE.Group();
+    critGroup.name = 'critPoints';
+    const critSphereGeom = new THREE.SphereGeometry(0.035, 10, 10);
+    // Critical point markers disabled — computation kept for future use
+    // for (let i = 0; i < critPts.length; i++) {
+    //     const cp = critPts[i];
+    //     const mat = new THREE.MeshBasicMaterial({ color: CRIT_COLORS[cp.type] });
+    //     const m = new THREE.Mesh(critSphereGeom, mat);
+    //     m.position.set(cp.pos[0], cp.pos[1], cp.pos[2]);
+    //     m.userData.critIdx = i;
+    //     critGroup.add(m);
+    // }
+    group.add(critGroup);
+
+    // Store critical points data and best position for external access
+    group.userData.critPts = critPts;
+    group.userData.critNames = CRIT_NAMES;
+    group.userData.bestPos = [pos.getX(bestIdx)*1.02, pos.getY(bestIdx)*1.02, pos.getZ(bestIdx)*1.02];
+
+    return group;
+}
+
+function moveMarker(x, y, z) {
+    if (!overlayState) return;
+    if (overlayState.marker) {
+        overlayState.scene.remove(overlayState.marker);
+        overlayState.marker.geometry.dispose();
+        overlayState.marker.material.dispose();
+    }
+    const mg = new THREE.SphereGeometry(0.04, 8, 8);
+    overlayState.marker = new THREE.Mesh(mg, new THREE.MeshBasicMaterial({ color: 0xff2266 }));
+    overlayState.marker.position.set(x, y, z);
+    overlayState.scene.add(overlayState.marker);
+}
+
+function updateOverlaySphere(objective) {
+    if (!overlayState || !cachedLeftMeshData) return;
+    clearOverlay();
+    overlayState.group = buildObjectiveSphere(cachedLeftMeshData, objective);
+    overlayState.scene.add(overlayState.group);
+    // Place marker at best direction
+    const bp = overlayState.group.userData.bestPos;
+    moveMarker(bp[0], bp[1], bp[2]);
+    const el = document.getElementById('sphere-overlay');
+    el.style.display = '';
+    requestAnimationFrame(() => resizeOverlay());
+    const pretty = { overhang:'Overhang', support_volume:'Sup. Volume', build_height:'Height', surface_quality:'Surf. Quality', stability:'Stability' };
+    document.getElementById('sphere-overlay-label').textContent = pretty[objective] || objective;
+}
+
+// ---- State ----
+let models = [], currentIndex = 0, mode = 'single';
+let paretoData = null; // cached for click handling
+const scenes = {};
+
+// ---- Scene setup ----
+function initScene(panelId) {
+    const panel = document.getElementById(panelId);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setClearColor(0x1a1a2e);
+    panel.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+    camera.up.set(0, 0, 1);
+    camera.position.set(2, 2, 1.5);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const d1 = new THREE.DirectionalLight(0xffffff, 0.8); d1.position.set(5, 5, 10); scene.add(d1);
+    const d2 = new THREE.DirectionalLight(0xffffff, 0.3); d2.position.set(-5, -5, -5); scene.add(d2);
+
+    const grid = new THREE.GridHelper(3, 20, 0x333355, 0x222244);
+    grid.rotation.x = Math.PI / 2;
+    scene.add(grid);
+
+    scenes[panelId] = { renderer, scene, camera, controls, grid, meshGroup: null, overlay: null, sphereGroup: null, paretoPoints: null };
+    resize(panelId);
+}
+
+function resize(panelId) {
+    const s = scenes[panelId];
+    const p = document.getElementById(panelId);
+    const w = p.clientWidth, h = p.clientHeight;
+    s.renderer.setSize(w, h);
+    s.camera.aspect = w / h;
+    s.camera.updateProjectionMatrix();
+}
+
+function clearGroup(s, key) {
+    if (s[key]) {
+        s.scene.remove(s[key]);
+        s[key].traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+        s[key] = null;
+    }
+}
+
+// ---- Mesh building ----
+function buildMeshFromBinary(d) {
+    const group = new THREE.Group();
+    const ohSet = new Set(d.ohIndices);
+    const positions = new Float32Array(d.nFaces * 9);
+    const colors = new Float32Array(d.nFaces * 9);
+
+    for (let f = 0; f < d.nFaces; f++) {
+        const i0 = d.faces[f*3], i1 = d.faces[f*3+1], i2 = d.faces[f*3+2];
+        for (let k = 0; k < 3; k++) {
+            positions[f*9+k] = d.vertices[i0*3+k];
+            positions[f*9+3+k] = d.vertices[i1*3+k];
+            positions[f*9+6+k] = d.vertices[i2*3+k];
+        }
+        const oh = ohSet.has(f);
+        const r = oh ? 0.86 : 0.27, g = oh ? 0.20 : 0.51, b = oh ? 0.20 : 0.71;
+        for (let v = 0; v < 3; v++) { colors[f*9+v*3]=r; colors[f*9+v*3+1]=g; colors[f*9+v*3+2]=b; }
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geom.computeVertexNormals();
+    group.add(new THREE.Mesh(geom, new THREE.MeshPhongMaterial({
+        vertexColors: true, transparent: true, opacity: 0.5, side: THREE.DoubleSide, flatShading: true,
+    })));
+
+    if (d.pillarCentroids.length > 0) {
+        const pp = [];
+        for (let i = 0; i < d.pillarCentroids.length; i += 3) {
+            pp.push(d.pillarCentroids[i], d.pillarCentroids[i+1], d.zMin);
+            pp.push(d.pillarCentroids[i], d.pillarCentroids[i+1], d.pillarCentroids[i+2]);
+        }
+        const pg = new THREE.BufferGeometry();
+        pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3));
+        group.add(new THREE.LineSegments(pg, new THREE.LineBasicMaterial({ color: 0xffa500 })));
+    }
+    return group;
+}
+
+// Color map: 0=steelblue, 1=red(A), 2=blue(B), 3=purple(both)
+const FLAG_COLORS = [
+    [0.27, 0.51, 0.71], // 0: normal
+    [0.86, 0.20, 0.20], // 1: obj A (red)
+    [0.20, 0.40, 0.90], // 2: obj B (blue)
+    [0.65, 0.15, 0.65], // 3: both (purple)
+];
+
+function buildMeshWithFlags(meshData, faceFlags) {
+    const group = new THREE.Group();
+    const d = meshData;
+    const positions = new Float32Array(d.nFaces * 9);
+    const colors = new Float32Array(d.nFaces * 9);
+
+    for (let f = 0; f < d.nFaces; f++) {
+        const i0 = d.faces[f*3], i1 = d.faces[f*3+1], i2 = d.faces[f*3+2];
+        for (let k = 0; k < 3; k++) {
+            positions[f*9+k] = d.vertices[i0*3+k];
+            positions[f*9+3+k] = d.vertices[i1*3+k];
+            positions[f*9+6+k] = d.vertices[i2*3+k];
+        }
+        const flag = faceFlags[f] || 0;
+        const [r, g, b] = FLAG_COLORS[flag];
+        for (let v = 0; v < 3; v++) { colors[f*9+v*3]=r; colors[f*9+v*3+1]=g; colors[f*9+v*3+2]=b; }
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geom.computeVertexNormals();
+    group.add(new THREE.Mesh(geom, new THREE.MeshPhongMaterial({
+        vertexColors: true, transparent: true, opacity: 0.5, side: THREE.DoubleSide, flatShading: true,
+    })));
+    return group;
+}
+
+function buildWireframeFromBinary(d) {
+    // Wireframe overlay for clicked Pareto point
+    const positions = new Float32Array(d.nFaces * 9);
+    for (let f = 0; f < d.nFaces; f++) {
+        const i0 = d.faces[f*3], i1 = d.faces[f*3+1], i2 = d.faces[f*3+2];
+        for (let k = 0; k < 3; k++) {
+            positions[f*9+k] = d.vertices[i0*3+k];
+            positions[f*9+3+k] = d.vertices[i1*3+k];
+            positions[f*9+6+k] = d.vertices[i2*3+k];
+        }
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const wireGeom = new THREE.WireframeGeometry(geom);
+    const wire = new THREE.LineSegments(wireGeom, new THREE.LineBasicMaterial({ color: 0x44ff88, opacity: 0.5, transparent: true }));
+    const group = new THREE.Group();
+    group.add(wire);
+    return group;
+}
+
+// ---- Sphere building ----
+function buildSphere(pd) {
+    const group = new THREE.Group();
+
+    // Translucent sphere
+    const sphereGeom = new THREE.SphereGeometry(0.98, 32, 24);
+    const sphereMat = new THREE.MeshBasicMaterial({ color: 0x334466, transparent: true, opacity: 0.08, side: THREE.DoubleSide });
+    group.add(new THREE.Mesh(sphereGeom, sphereMat));
+
+    // All candidates (faint)
+    const allPos = new Float32Array(pd.nCand * 3);
+    for (let i = 0; i < pd.nCand * 3; i++) allPos[i] = pd.gravities[i];
+    const allGeom = new THREE.BufferGeometry();
+    allGeom.setAttribute('position', new THREE.BufferAttribute(allPos, 3));
+    const allPts = new THREE.Points(allGeom, new THREE.PointsMaterial({ color: 0x556677, size: 2, sizeAttenuation: false }));
+    group.add(allPts);
+
+    // Pareto points (colored gradient red→blue)
+    const n = pd.nPareto;
+    const paretoPos = new Float32Array(n * 3);
+    const paretoColors = new Float32Array(n * 3);
+
+    // Sort pareto points by first objective for gradient coloring
+    const sortedIdx = Array.from({length: n}, (_, i) => i);
+    sortedIdx.sort((a, b) => {
+        const ia = pd.paretoIdx[a], ib = pd.paretoIdx[b];
+        return pd.objValues[ia * 2] - pd.objValues[ib * 2];
+    });
+
+    for (let si = 0; si < n; si++) {
+        const pi = pd.paretoIdx[sortedIdx[si]];
+        paretoPos[si*3] = pd.gravities[pi*3];
+        paretoPos[si*3+1] = pd.gravities[pi*3+1];
+        paretoPos[si*3+2] = pd.gravities[pi*3+2];
+        const t = n > 1 ? si / (n - 1) : 0.5;
+        paretoColors[si*3] = 1 - t;     // R: 1→0
+        paretoColors[si*3+1] = 0.1;     // G
+        paretoColors[si*3+2] = t;       // B: 0→1
+    }
+
+    const paretoGeom = new THREE.BufferGeometry();
+    paretoGeom.setAttribute('position', new THREE.BufferAttribute(paretoPos, 3));
+    paretoGeom.setAttribute('color', new THREE.BufferAttribute(paretoColors, 3));
+    const paretoPts = new THREE.Points(paretoGeom, new THREE.PointsMaterial({
+        vertexColors: true, size: 8, sizeAttenuation: false
+    }));
+    group.add(paretoPts);
+
+    // Store sorted mapping for raycasting
+    group.userData = { sortedIdx, paretoPts };
+
+    return group;
+}
+
+function showMesh(panelId, d) {
+    const s = scenes[panelId];
+    clearGroup(s, 'meshGroup');
+    clearGroup(s, 'overlay');
+    s.meshGroup = buildMeshFromBinary(d);
+    s.scene.add(s.meshGroup);
+    s.grid.position.z = d.zMin;
+}
+
+function showMeshWithFlags(panelId, meshData, faceFlags) {
+    const s = scenes[panelId];
+    clearGroup(s, 'meshGroup');
+    clearGroup(s, 'overlay');
+    s.meshGroup = buildMeshWithFlags(meshData, faceFlags);
+    s.scene.add(s.meshGroup);
+}
+
+function showSphere(panelId, pd) {
+    const s = scenes[panelId];
+    clearGroup(s, 'meshGroup');
+    clearGroup(s, 'overlay');
+    clearGroup(s, 'sphereGroup');
+    s.grid.visible = false;
+    s.sphereGroup = buildSphere(pd);
+    s.scene.add(s.sphereGroup);
+    // Reset camera for sphere view
+    s.camera.position.set(2.5, 2.5, 1.5);
+    s.controls.target.set(0, 0, 0);
+}
+
+function clearSphere(panelId) {
+    const s = scenes[panelId];
+    clearGroup(s, 'sphereGroup');
+    s.grid.visible = true;
+}
+
+// ---- API ----
+async function fetchModels() {
+    models = await (await fetch('/api/models')).json();
+}
+
+async function loadModel(index) {
+    const model = models[index];
+    document.getElementById('model-name').textContent = model.name;
+    document.getElementById('model-faces').textContent = `(${model.n_faces.toLocaleString()} faces)`;
+    document.getElementById('btn-back').disabled = index === 0;
+    document.getElementById('btn-next').disabled = index === models.length - 1;
+
+    if (mode === 'single') {
+        await loadSingleMode(model.name);
+    } else {
+        await loadPairMode(model.name);
+    }
+}
+
+// ---- Single mode ----
+async function loadSingleMode(name) {
+    clearSphere('panel-right');
+    document.getElementById('loading-left').style.display = '';
+    const buf = await (await fetch(`/api/mesh/${name}`)).arrayBuffer();
+    const d = parseMeshBinary(buf);
+    showMesh('panel-left', d);
+    cachedLeftMeshData = prepareMeshArrays(d);
+    document.getElementById('label-left').innerHTML = `Original<br><span class="value">${d.nFacesOrig.toLocaleString()} faces</span>`;
+    document.getElementById('loading-left').style.display = 'none';
+    const objective = document.getElementById('objective-select').value;
+    updateOverlaySphere(objective);
+    await runSingleOptimize(name);
+}
+
+async function runSingleOptimize(name) {
+    const objective = document.getElementById('objective-select').value;
+    document.getElementById('loading-right').style.display = '';
+    const s = scenes['panel-right']; clearGroup(s, 'meshGroup');
+    document.getElementById('label-right').innerHTML = 'Optimizing...';
+
+    const buf = await (await fetch('/api/optimize', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: name, objective }),
+    })).arrayBuffer();
+    const d = parseMeshBinary(buf);
+    showMesh('panel-right', d);
+    const orig = d.extra[0]||0, opt = d.extra[1]||0;
+    const pct = orig > 0 ? ((1 - opt/orig) * 100).toFixed(1) : '0.0';
+    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+    document.getElementById('label-right').innerHTML =
+        `Optimized (${pretty[objective]})<br><span class="value">${orig.toFixed(1)} &rarr; ${opt.toFixed(1)} (${pct}%)</span>`;
+    document.getElementById('loading-right').style.display = 'none';
+}
+
+// ---- Pair mode ----
+let cachedMeshBuf = null; // cache original mesh binary for overlay building
+
+async function loadPairMode(name) {
+    // Load original mesh for left panel
+    document.getElementById('loading-left').style.display = '';
+    const meshBuf = await (await fetch(`/api/mesh/${name}`)).arrayBuffer();
+    cachedMeshBuf = meshBuf;
+    document.getElementById('loading-left').style.display = 'none';
+
+    await runParetoAnalysis(name);
+}
+
+async function runParetoAnalysis(name) {
+    const objA = document.getElementById('obj-a').value;
+    const objB = document.getElementById('obj-b').value;
+    if (objA === objB) { document.getElementById('label-right').innerHTML = 'Select different objectives'; return; }
+
+    document.getElementById('loading-right').style.display = '';
+    document.getElementById('label-right').innerHTML = 'Computing Pareto front...';
+
+    const buf = await (await fetch('/api/pareto', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: name, objective_a: objA, objective_b: objB }),
+    })).arrayBuffer();
+    paretoData = parseParetoBinary(buf);
+
+    // Left panel: original mesh with dual-color flags
+    const meshData = parseMeshBinary(cachedMeshBuf);
+    showMeshWithFlags('panel-left', meshData, paretoData.faceFlags);
+    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+    document.getElementById('label-left').innerHTML =
+        `Original &mdash; <span style="color:#dd3333">${pretty[objA]}</span> vs <span style="color:#3366ee">${pretty[objB]}</span>`;
+
+    // Right panel: S2 sphere
+    showSphere('panel-right', paretoData);
+    document.getElementById('label-right').innerHTML =
+        `Pareto front (${paretoData.nPareto} points) &mdash; click to inspect`;
+    document.getElementById('loading-right').style.display = 'none';
+}
+
+// ---- Sphere click → wireframe overlay ----
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points.threshold = 0.05;
+const mouse = new THREE.Vector2();
+
+document.getElementById('panel-right').addEventListener('click', async (e) => {
+    if (mode !== 'pair' || !paretoData) return;
+    const s = scenes['panel-right'];
+    if (!s.sphereGroup || !s.sphereGroup.userData.paretoPts) return;
+
+    const rect = document.getElementById('panel-right').getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, s.camera);
+    const hits = raycaster.intersectObject(s.sphereGroup.userData.paretoPts);
+    if (hits.length === 0) return;
+
+    const sortedLocalIdx = hits[0].index;
+    const origIdx = paretoData.paretoIdx[s.sphereGroup.userData.sortedIdx[sortedLocalIdx]];
+    const gx = paretoData.gravities[origIdx*3];
+    const gy = paretoData.gravities[origIdx*3+1];
+    const gz = paretoData.gravities[origIdx*3+2];
+
+    const name = models[currentIndex].name;
+    const buf = await (await fetch('/api/rotate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: name, gravity: [gx, gy, gz] }),
+    })).arrayBuffer();
+    const d = parseMeshBinary(buf);
+
+    // Show wireframe overlay on left panel
+    const sL = scenes['panel-left'];
+    clearGroup(sL, 'overlay');
+    sL.overlay = buildWireframeFromBinary(d);
+    sL.scene.add(sL.overlay);
+
+    // Update label with objective values
+    const vA = paretoData.objValues[origIdx*2].toFixed(1);
+    const vB = paretoData.objValues[origIdx*2+1].toFixed(1);
+    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+    const objA = document.getElementById('obj-a').value;
+    const objB = document.getElementById('obj-b').value;
+    document.getElementById('label-left').innerHTML =
+        `<span style="color:#44ff88">Pareto point</span>: ${pretty[objA]}=${vA}, ${pretty[objB]}=${vB}`;
+});
+
+// ---- Mode switching ----
+function setMode(m) {
+    mode = m;
+    document.getElementById('btn-single').classList.toggle('active', m === 'single');
+    document.getElementById('btn-pair').classList.toggle('active', m === 'pair');
+    document.getElementById('objective-select').classList.toggle('hidden', m !== 'single');
+    document.getElementById('pair-controls').classList.toggle('hidden', m !== 'pair');
+    document.getElementById('sphere-overlay').style.display = m === 'single' ? '' : 'none';
+    if (m !== 'single') clearOverlay();
+    if (models.length > 0) loadModel(currentIndex);
+}
+
+document.getElementById('btn-single').addEventListener('click', () => setMode('single'));
+document.getElementById('btn-pair').addEventListener('click', () => setMode('pair'));
+
+// ---- Navigation ----
+document.getElementById('btn-back').addEventListener('click', () => { if (currentIndex > 0) { currentIndex--; loadModel(currentIndex); } });
+document.getElementById('btn-next').addEventListener('click', () => { if (currentIndex < models.length - 1) { currentIndex++; loadModel(currentIndex); } });
+document.getElementById('objective-select').addEventListener('change', () => {
+    if (mode === 'single' && models.length > 0) {
+        const obj = document.getElementById('objective-select').value;
+        updateOverlaySphere(obj);
+        runSingleOptimize(models[currentIndex].name);
+    }
+});
+document.getElementById('obj-a').addEventListener('change', () => {
+    if (mode === 'pair' && models.length > 0) runParetoAnalysis(models[currentIndex].name);
+});
+document.getElementById('obj-b').addEventListener('change', () => {
+    if (mode === 'pair' && models.length > 0) runParetoAnalysis(models[currentIndex].name);
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' && currentIndex > 0) { currentIndex--; loadModel(currentIndex); }
+    else if (e.key === 'ArrowRight' && currentIndex < models.length - 1) { currentIndex++; loadModel(currentIndex); }
+});
+
+// ---- Init ----
+initScene('panel-left');
+initScene('panel-right');
+initOverlay();
+window.addEventListener('resize', () => { resize('panel-left'); resize('panel-right'); resizeOverlay(); });
+
+function animate() {
+    requestAnimationFrame(animate);
+    for (const s of Object.values(scenes)) { s.controls.update(); s.renderer.render(s.scene, s.camera); }
+    if (overlayState) { overlayState.controls.update(); overlayState.renderer.render(overlayState.scene, overlayState.camera); }
+}
+animate();
+fetchModels().then(() => { if (models.length > 0) loadModel(0); });
+</script>
+</body>
+</html>
