@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OrientIQ — Smart 3D Print Orientation for Print Farms</title>
+  <meta name="description" content="Stop wasting hours orienting 3D models. OrientIQ automatically optimizes orientation, minimizes supports, and packs your build plate — so you can focus on running your farm." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #13131a;
+      --border: #1e1e2e;
+      --accent: #6c63ff;
+      --accent-light: #8b85ff;
+      --text: #e8e8f0;
+      --muted: #7a7a9a;
+      --success: #22c55e;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* NAV */
+    nav {
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(10, 10, 15, 0.92);
+      backdrop-filter: blur(10px);
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+
+    .logo span { color: var(--accent); }
+
+    .nav-cta {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+
+    .nav-cta:hover { background: var(--accent-light); }
+
+    /* HERO */
+    .hero {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 6rem 2rem 4rem;
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-block;
+      background: rgba(108, 99, 255, 0.12);
+      border: 1px solid rgba(108, 99, 255, 0.3);
+      color: var(--accent-light);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.35rem 0.9rem;
+      border-radius: 100px;
+      margin-bottom: 1.75rem;
+    }
+
+    h1 {
+      font-size: clamp(2.25rem, 5vw, 3.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 1.25rem;
+      color: #fff;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--accent-light);
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto 2.5rem;
+    }
+
+    /* FORM */
+    .waitlist-form {
+      display: flex;
+      gap: 0.75rem;
+      max-width: 460px;
+      margin: 0 auto 1rem;
+    }
+
+    .waitlist-form input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .waitlist-form input:focus { border-color: var(--accent); }
+    .waitlist-form input::placeholder { color: var(--muted); }
+
+    .waitlist-form button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+
+    .waitlist-form button:hover { background: var(--accent-light); }
+
+    .form-note {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .success-msg {
+      display: none;
+      color: var(--success);
+      font-weight: 600;
+      font-size: 1rem;
+      margin-top: 0.5rem;
+    }
+
+    /* PAIN STATS */
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 2.5rem;
+      flex-wrap: wrap;
+      padding: 3rem 2rem;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      margin: 4rem 0 0;
+    }
+
+    .stat { text-align: center; }
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent-light);
+      letter-spacing: -0.03em;
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.25rem;
+    }
+
+    /* FEATURES */
+    .features {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 5rem 2rem;
+    }
+
+    .section-label {
+      text-align: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      text-align: center;
+      font-size: clamp(1.75rem, 3vw, 2.25rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #fff;
+      margin-bottom: 3.5rem;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem;
+      transition: border-color 0.2s;
+    }
+
+    .feature-card:hover { border-color: var(--accent); }
+
+    .feature-icon {
+      font-size: 1.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-card p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    /* WHO IT'S FOR */
+    .audience {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 5rem 2rem;
+      text-align: center;
+    }
+
+    .audience-inner { max-width: 640px; margin: 0 auto; }
+
+    .audience h2 {
+      font-size: clamp(1.75rem, 3vw, 2.25rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #fff;
+      margin-bottom: 1rem;
+    }
+
+    .audience p {
+      color: var(--muted);
+      font-size: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .audience-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+
+    .tag {
+      background: rgba(108, 99, 255, 0.1);
+      border: 1px solid rgba(108, 99, 255, 0.25);
+      color: var(--accent-light);
+      padding: 0.4rem 1rem;
+      border-radius: 100px;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    /* CTA BOTTOM */
+    .cta-bottom {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 6rem 2rem;
+      text-align: center;
+    }
+
+    .cta-bottom h2 {
+      font-size: clamp(1.75rem, 3vw, 2.5rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #fff;
+      margin-bottom: 1rem;
+    }
+
+    .cta-bottom p {
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    /* FOOTER */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1.5rem 2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 520px) {
+      .waitlist-form { flex-direction: column; }
+      .stats { gap: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="logo">Orient<span>IQ</span></div>
+    <a href="#waitlist" class="nav-cta">Join Waitlist</a>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="badge">Built for Print Farm Operators</div>
+    <h1>Stop Wasting Hours<br>Orienting <em>3D Models</em></h1>
+    <p class="subtitle">
+      OrientIQ automatically finds the optimal orientation, minimizes support material, and packs your build plate — so you can run more jobs with less manual work.
+    </p>
+
+    <div id="waitlist">
+      <form class="waitlist-form" onsubmit="handleSubmit(event)">
+        <input type="email" placeholder="your@email.com" required />
+        <button type="submit">Join Waitlist</button>
+      </form>
+      <p class="form-note">No spam. Early access when we launch.</p>
+      <p class="success-msg" id="success">You're on the list. We'll be in touch.</p>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-number">851+</div>
+        <div class="stat-label">Open Issues About Supports</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number">4</div>
+        <div class="stat-label">Major Slicers, Same Problem</div>
+      </div>
+      <div class="stat">
+        <div class="stat-number">2h+</div>
+        <div class="stat-label">Saved Per Day, Per Farm</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features">
+    <div class="section-label">What OrientIQ does</div>
+    <h2 class="section-title">One tool. Three problems solved.</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔄</div>
+        <h3>Smart Auto-Orient</h3>
+        <p>Finds the optimal orientation for your model — minimizing supports, maximizing strength, and protecting cosmetic surfaces. And it tells you <em>why</em>.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧱</div>
+        <h3>Support Minimization</h3>
+        <p>Reduces support material by up to 60% by finding orientations that eliminate unnecessary overhangs — before you even open your slicer.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📦</div>
+        <h3>Batch Plate Packing</h3>
+        <p>Packs multiple parts onto your build plate intelligently — respecting orientation locks, clearances, and sequential print order.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Slicer-Agnostic</h3>
+        <p>Works with PrusaSlicer, OrcaSlicer, Cura, Bambu Studio — outputs pre-oriented files ready to slice. No lock-in.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Orientation Lock</h3>
+        <p>Lock the orientation of specific parts before batch arrangement. Your careful choices stay intact when auto-arrange runs.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h3>Explainable Decisions</h3>
+        <p>"Rotated 45° — reduces supports by 38%, adds 12% print time." Know exactly why OrientIQ made each choice.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHO IT'S FOR -->
+  <section class="audience">
+    <div class="audience-inner">
+      <div class="section-label">Who it's for</div>
+      <h2>Built for people who print at scale</h2>
+      <p>OrientIQ is designed for operators who run multiple printers and need to process dozens of jobs per week — not for one-off hobbyist prints.</p>
+      <div class="audience-tags">
+        <span class="tag">Print Farm Operators</span>
+        <span class="tag">3D Printing Services</span>
+        <span class="tag">Product Prototyping Teams</span>
+        <span class="tag">On-Demand Manufacturing</span>
+        <span class="tag">Dental & Medical Labs</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA BOTTOM -->
+  <section class="cta-bottom">
+    <div class="section-label">Early Access</div>
+    <h2>Be first when we launch</h2>
+    <p>We're building OrientIQ based on real pain points from thousands of print farm operators. Join the waitlist to shape what we build — and get early access.</p>
+    <form class="waitlist-form" style="justify-content:center" onsubmit="handleSubmit(event)">
+      <input type="email" placeholder="your@email.com" required />
+      <button type="submit">Join Waitlist</button>
+    </form>
+    <p class="form-note" style="margin-top:0.75rem">No spam. Early access when we launch.</p>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>&copy; 2026 OrientIQ. Built for print farm operators.</p>
+  </footer>
+
+  <script>
+    function handleSubmit(e) {
+      e.preventDefault();
+      const email = e.target.querySelector('input[type="email"]').value;
+      // Replace this URL with your Tally/Typeform/Mailchimp endpoint
+      console.log('Waitlist signup:', email);
+      document.getElementById('success').style.display = 'block';
+      e.target.reset();
+      e.target.querySelector('button').textContent = 'You\'re in!';
+      e.target.querySelector('button').disabled = true;
+    }
+
+    // Smooth scroll
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        document.querySelector(a.getAttribute('href'))?.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+  </script>
+
+</body>
+</html>
