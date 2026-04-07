@@ -13,7 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from orient_opt.objectives import build_height, overhang, support_volume, surface_quality, stability
+from orient_opt.critical_points import find_critical_points
+from orient_opt.gradients import build_height_gradient, overhang_smooth_gradient
+from orient_opt.objectives import build_height, overhang, overhang_smooth, support_volume, surface_quality, stability
 from orient_opt.optimizer import coarse_then_refine
 from orient_opt.sampling import fibonacci_sphere
 from orient_opt.hopf import sphere_to_quaternion, quaternion_to_rotation_matrix
@@ -395,6 +397,60 @@ def rotate(req: RotateRequest):
         n_faces_original=len(model_cache[req.model_name].faces),
     )
     return Response(content=data, media_type="application/octet-stream")
+
+
+class CriticalPointsRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
+    model_name: str
+    objective: str
+    lam: float = 0.7
+    overhang_angle: float = 45.0
+    beta: float = 50.0
+    n_samples: int = 2000
+
+
+@app.post("/api/critical_points")
+def critical_points(req: CriticalPointsRequest):
+    if req.model_name not in model_cache:
+        raise HTTPException(404, f"Model '{req.model_name}' not found")
+    if req.objective not in OBJECTIVES:
+        raise HTTPException(400, f"Unknown objective '{req.objective}'")
+
+    _, _, _, on, ov, of, opt_areas = _get_mesh_data(req.model_name)
+    lam = float(np.clip(req.lam, 0.0, 1.0))
+
+    # Build objective/gradient callables consistent with coarse_then_refine
+    oh_vals = overhang(on, opt_areas, fibonacci_sphere(200), angle=req.overhang_angle)
+    bh_vals = build_height(ov, fibonacci_sphere(200))
+    oh_min, oh_max = float(oh_vals.min()), float(oh_vals.max())
+    bh_min, bh_max = float(bh_vals.min()), float(bh_vals.max())
+    oh_range = (oh_max - oh_min) if oh_max > oh_min else 1.0
+    bh_range = (bh_max - bh_min) if bh_max > bh_min else 1.0
+
+    def objective_fn(g: np.ndarray) -> float:
+        g2 = g.reshape(1, 3)
+        o = float(overhang_smooth(on, opt_areas, g2, angle=req.overhang_angle, beta=req.beta)[0])
+        h = float(build_height(ov, g2)[0])
+        return lam * (o - oh_min) / oh_range + (1 - lam) * (h - bh_min) / bh_range
+
+    def gradient_fn(g: np.ndarray) -> np.ndarray:
+        grad_o = overhang_smooth_gradient(g, on, opt_areas, angle=req.overhang_angle, beta=req.beta)
+        grad_h = build_height_gradient(g, ov)
+        return lam * grad_o / oh_range + (1 - lam) * grad_h / bh_range
+
+    cps = find_critical_points(
+        objective_fn, gradient_fn, n_samples=req.n_samples
+    )
+
+    return [
+        {
+            "g": cp.g.tolist(),
+            "type": cp.cp_type,
+            "f_value": cp.f_value,
+            "grad_norm": cp.grad_norm,
+        }
+        for cp in cps
+    ]
 
 
 # Static files & root

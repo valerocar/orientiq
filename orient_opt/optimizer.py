@@ -11,9 +11,9 @@ def riemannian_gd(
     g_init: np.ndarray,
     objective_fn,
     gradient_fn,
-    eta: float = 0.01,
+    eta: float = 0.05,
     tol: float = 1e-6,
-    max_iter: int = 100,
+    max_iter: int = 300,
 ) -> np.ndarray:
     """Riemannian gradient descent on S².
 
@@ -49,9 +49,9 @@ def coarse_then_refine(
     n_samples: int = 500,
     beta: float = 50.0,
     n_refine: int = 5,
-    eta: float = 0.01,
+    eta: float = 0.05,
     tol: float = 1e-6,
-    max_iter: int = 100,
+    max_iter: int = 300,
 ) -> OrientationResult:
     """Full optimization pipeline: sample, evaluate, filter, refine, select best.
 

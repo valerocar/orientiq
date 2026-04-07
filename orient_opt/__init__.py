@@ -1,5 +1,6 @@
 """orient_opt — Optimal 3D printing orientation via S² search."""
 
+from .critical_points import CriticalPoint, find_critical_points
 from .optimizer import coarse_then_refine
 from .pareto import pareto_front, pairwise_pareto
 from .types import OrientationResult
@@ -10,6 +11,8 @@ __all__ = [
     "pareto_front",
     "pairwise_pareto",
     "OrientationResult",
+    "find_critical_points",
+    "CriticalPoint",
 ]
 
 
