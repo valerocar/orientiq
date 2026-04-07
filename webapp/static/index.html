@@ -587,25 +587,9 @@ function buildObjectiveSphere(meshData, objective) {
         }
     }
 
-    // Build critical point markers as small spheres
-    const CRIT_COLORS = [
-        0x00cc33,  // min: green
-        0x3366ff,  // max: blue
-        0xffdd00,  // saddle: yellow
-    ];
-    const CRIT_NAMES = ['Minimum', 'Maximum', 'Saddle'];
+    // Critical point marker group (populated later by fetchAndShowCriticalPoints)
     const critGroup = new THREE.Group();
     critGroup.name = 'critPoints';
-    const critSphereGeom = new THREE.SphereGeometry(0.035, 10, 10);
-    // Critical point markers disabled — computation kept for future use
-    // for (let i = 0; i < critPts.length; i++) {
-    //     const cp = critPts[i];
-    //     const mat = new THREE.MeshBasicMaterial({ color: CRIT_COLORS[cp.type] });
-    //     const m = new THREE.Mesh(critSphereGeom, mat);
-    //     m.position.set(cp.pos[0], cp.pos[1], cp.pos[2]);
-    //     m.userData.critIdx = i;
-    //     critGroup.add(m);
-    // }
     group.add(critGroup);
 
     // Store critical points data and best position for external access
@@ -642,6 +626,56 @@ function updateOverlaySphere(objective) {
     requestAnimationFrame(() => resizeOverlay());
     const pretty = { overhang:'Overhang', support_volume:'Sup. Volume', build_height:'Height', surface_quality:'Surf. Quality', stability:'Stability' };
     document.getElementById('sphere-overlay-label').textContent = pretty[objective] || objective;
+}
+
+const CRIT_COLORS = {
+    min:        0x00cc33,   // green
+    max:        0x3366ff,   // blue
+    saddle:     0xffdd00,   // yellow
+    degenerate: 0xff8800,   // orange
+};
+const CRIT_NAMES = { min: 'Minimum', max: 'Maximum', saddle: 'Saddle', degenerate: 'Degenerate set' };
+
+async function fetchAndShowCriticalPoints(name, objective) {
+    if (!overlayState || !overlayState.group) return;
+    const critGroup = overlayState.group.getObjectByName('critPoints');
+    if (!critGroup) return;
+
+    // Clear any previous markers
+    while (critGroup.children.length) {
+        const c = critGroup.children[0];
+        if (c.geometry) c.geometry.dispose();
+        if (c.material) c.material.dispose();
+        critGroup.remove(c);
+    }
+
+    let cps;
+    try {
+        const res = await fetch('/api/critical_points', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: name, objective }),
+        });
+        if (!res.ok) return;
+        cps = await res.json();
+    } catch (e) { return; }
+
+    const geom = new THREE.SphereGeometry(0.035, 10, 10);
+    const cpData = [];
+    for (let i = 0; i < cps.length; i++) {
+        const cp = cps[i];
+        const r = 1.03;
+        const pos = [cp.g[0] * r, cp.g[1] * r, cp.g[2] * r];
+        const color = CRIT_COLORS[cp.type] ?? 0xffffff;
+        const mat = new THREE.MeshBasicMaterial({ color });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(pos[0], pos[1], pos[2]);
+        mesh.userData.critIdx = i;
+        critGroup.add(mesh);
+        cpData.push({ pos, type: cp.type, value: cp.f_value, grad_norm: cp.grad_norm });
+    }
+
+    overlayState.group.userData.critPts = cpData;
+    overlayState.group.userData.critNames = CRIT_NAMES;
 }
 
 // ---- State ----
@@ -910,6 +944,7 @@ async function loadSingleMode(name) {
     document.getElementById('loading-left').style.display = 'none';
     const objective = document.getElementById('objective-select').value;
     updateOverlaySphere(objective);
+    fetchAndShowCriticalPoints(name, objective);
     await runSingleOptimize(name);
 }
 
@@ -1043,6 +1078,7 @@ document.getElementById('objective-select').addEventListener('change', () => {
     if (mode === 'single' && models.length > 0) {
         const obj = document.getElementById('objective-select').value;
         updateOverlaySphere(obj);
+        fetchAndShowCriticalPoints(models[currentIndex].name, obj);
         runSingleOptimize(models[currentIndex].name);
     }
 });
