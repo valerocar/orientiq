@@ -186,6 +186,40 @@
       margin-top: 0.25rem;
     }
 
+    /* SLICER ROW */
+    .slicer-row {
+      text-align: center;
+      padding: 2.5rem 2rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .slicer-row-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
+    }
+    .slicer-logos {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      flex-wrap: wrap;
+    }
+    .slicer-logos span {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--muted);
+      opacity: 0.7;
+    }
+
+    /* PRIVACY BADGE */
+    .privacy-badge {
+      margin-top: 0.75rem;
+      font-size: 0.78rem;
+      color: var(--success);
+      font-weight: 600;
+    }
+
     /* FEATURES */
     .features {
       max-width: 900px;
@@ -309,6 +343,211 @@
       margin-bottom: 2rem;
     }
 
+    /* PRICING */
+    .pricing {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 5rem 2rem;
+      text-align: center;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+    .pricing-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem 1.5rem;
+      position: relative;
+      text-align: left;
+    }
+    .pricing-card.featured {
+      border-color: var(--accent);
+      box-shadow: 0 0 30px rgba(108, 99, 255, 0.15);
+    }
+    .pricing-popular {
+      position: absolute;
+      top: -0.75rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.25rem 0.75rem;
+      border-radius: 100px;
+    }
+    .pricing-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .price {
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 1.25rem;
+    }
+    .price span {
+      font-size: 0.9rem;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .pricing-card ul {
+      list-style: none;
+      margin-bottom: 1.5rem;
+    }
+    .pricing-card li {
+      font-size: 0.875rem;
+      color: var(--muted);
+      padding: 0.35rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pricing-card li::before {
+      content: "\2713  ";
+      color: var(--accent-light);
+    }
+    .pricing-btn {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.7rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .pricing-btn:hover { background: var(--accent-light); }
+
+    /* MODAL */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem;
+      max-width: 440px;
+      width: 90%;
+      text-align: center;
+      position: relative;
+    }
+    .modal h3 {
+      font-size: 1.5rem;
+      color: #fff;
+      margin-bottom: 0.75rem;
+    }
+    .modal p {
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    .modal-tier {
+      font-size: 0.85rem;
+      color: var(--accent-light);
+      font-weight: 600;
+    }
+
+    /* FAQ */
+    .faq {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 5rem 2rem;
+    }
+    .faq-list { text-align: left; }
+    .faq-item {
+      border-bottom: 1px solid var(--border);
+      padding: 1.25rem 0;
+    }
+    .faq-item summary {
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      font-size: 1rem;
+      list-style: none;
+    }
+    .faq-item summary::before {
+      content: "+ ";
+      color: var(--accent);
+      font-weight: 800;
+    }
+    .faq-item[open] summary::before { content: "\2212  "; }
+    .faq-item p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 0.75rem;
+      line-height: 1.6;
+    }
+
+    /* SURVEY */
+    .survey { max-width: 460px; margin: 0 auto; text-align: left; }
+    .survey-q { margin-bottom: 1rem; }
+    .survey-q label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .survey-options {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .survey-options button {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .survey-options button.selected {
+      border-color: var(--accent);
+      color: var(--accent-light);
+      background: rgba(108, 99, 255, 0.12);
+    }
+    .survey-submit {
+      margin-top: 0.75rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+    }
+
     /* FOOTER */
     footer {
       border-top: 1px solid var(--border);
@@ -321,6 +560,7 @@
     @media (max-width: 520px) {
       .waitlist-form { flex-direction: column; }
       .stats { gap: 1.5rem; }
+      .pricing-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -329,15 +569,16 @@
   <!-- NAV -->
   <nav>
     <div class="logo">Orient<span>IQ</span></div>
-    <a href="#waitlist" class="nav-cta">Join Waitlist</a>
+    <a href="#waitlist" class="nav-cta">Get Early Access</a>
   </nav>
 
   <!-- HERO -->
   <section class="hero">
     <div class="badge">Built for Print Farm Operators</div>
-    <h1>Upload Files.<br><em>Get Print-Ready Plates.</em></h1>
+    <h1>Automate Plate Prep.<br><em>Cut Support Waste by 60%.</em></h1>
     <p class="subtitle">
-      OrientIQ balances supports, strength, surface quality, and print time — then packs everything across multiple build plates. You set the priorities. OrientIQ does the rest.
+      Multi-objective orientation optimization + automatic plate packing.
+      You set the priorities — OrientIQ handles the rest.
     </p>
 
     <div id="waitlist">
@@ -346,17 +587,51 @@
         <button type="submit">Join Waitlist</button>
       </form>
       <p class="form-note">No spam. Early access when we launch.</p>
-      <p class="success-msg" id="success">You're on the list. We'll be in touch.</p>
+      <div class="survey" id="survey" style="display:none;">
+        <p class="success-msg" style="display:block">You're on the list!</p>
+        <p style="color:var(--muted);font-size:0.9rem;margin:0.75rem 0 1.25rem;">Help us build the right thing — 3 quick questions:</p>
+        <div class="survey-questions">
+          <div class="survey-q">
+            <label>How many printers in your farm?</label>
+            <div class="survey-options" data-question="printers">
+              <button type="button" onclick="selectOption(this)">1–5</button>
+              <button type="button" onclick="selectOption(this)">6–20</button>
+              <button type="button" onclick="selectOption(this)">21–50</button>
+              <button type="button" onclick="selectOption(this)">50+</button>
+            </div>
+          </div>
+          <div class="survey-q">
+            <label>Biggest bottleneck?</label>
+            <div class="survey-options" data-question="bottleneck">
+              <button type="button" onclick="selectOption(this)">Orientation</button>
+              <button type="button" onclick="selectOption(this)">Plate packing</button>
+              <button type="button" onclick="selectOption(this)">Support removal</button>
+              <button type="button" onclick="selectOption(this)">Failures</button>
+            </div>
+          </div>
+          <div class="survey-q">
+            <label>What would you pay per month?</label>
+            <div class="survey-options" data-question="pricing">
+              <button type="button" onclick="selectOption(this)">Free only</button>
+              <button type="button" onclick="selectOption(this)">$10–30</button>
+              <button type="button" onclick="selectOption(this)">$30–100</button>
+              <button type="button" onclick="selectOption(this)">$100+</button>
+            </div>
+          </div>
+        </div>
+        <button class="survey-submit" onclick="submitSurvey()">Submit</button>
+        <p id="surveyThanks" style="display:none;color:var(--success);font-weight:600;margin-top:0.75rem;">Thanks! That helps a lot.</p>
+      </div>
     </div>
 
     <div class="stats">
       <div class="stat">
-        <div class="stat-number">851+</div>
+        <div class="stat-number">1,058+</div>
         <div class="stat-label">Open Issues About Supports</div>
       </div>
       <div class="stat">
-        <div class="stat-number">4</div>
-        <div class="stat-label">Major Slicers, Same Problem</div>
+        <div class="stat-number">4,400+</div>
+        <div class="stat-label">Data Points Across GitHub, Reddit & YouTube</div>
       </div>
       <div class="stat">
         <div class="stat-number">2h+</div>
@@ -364,6 +639,17 @@
       </div>
     </div>
   </section>
+
+  <!-- SLICER ROW -->
+  <div class="slicer-row">
+    <p class="slicer-row-label">Works with your favorite slicer</p>
+    <div class="slicer-logos">
+      <span>Bambu Studio</span>
+      <span>PrusaSlicer</span>
+      <span>OrcaSlicer</span>
+      <span>Cura</span>
+    </div>
+  </div>
 
   <!-- FEATURES -->
   <section class="features">
@@ -377,18 +663,19 @@
       </div>
       <div class="feature-card">
         <div class="feature-icon">🧱</div>
-        <h3>Support Minimization</h3>
-        <p>Reduces support material by up to 60% by finding orientations that eliminate unnecessary overhangs — before you even open your slicer.</p>
+        <h3>Save Kilograms of Filament</h3>
+        <p>Reduce support material by up to 60%. Less waste, less post-processing labor, more profit per plate.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">📦</div>
-        <h3>Multi-Plate Packing</h3>
-        <p>Upload 50 files, get back 5 fully packed plates. OrientIQ distributes parts across as many plates as needed — maximizing utilization on every one.</p>
+        <h3>Maximize Every Build Plate</h3>
+        <p>Upload 50 parts, get back 5 optimally packed plates. Fill every square centimeter and push throughput higher.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">☁️</div>
         <h3>Works in Your Browser</h3>
         <p>Upload one file or a whole batch — get back optimized files ready to slice. No software to install, no plugins, no setup.</p>
+        <div class="privacy-badge">Files processed and deleted instantly. We never store your designs.</div>
       </div>
       <div class="feature-card">
         <div class="feature-icon">🔒</div>
@@ -397,8 +684,13 @@
       </div>
       <div class="feature-card">
         <div class="feature-icon">💬</div>
-        <h3>Explainable Decisions</h3>
-        <p>"Rotated 45° — supports −38%, print time +12%, strength +20%." See the trade-offs for every choice so you stay in control.</p>
+        <h3>You Stay in Control</h3>
+        <p>"Rotated 45° — supports −38%, print time +12%, strength +20%." OrientIQ shows every trade-off visually so you understand and trust every recommendation.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">✅</div>
+        <h3>Fewer Failed Prints</h3>
+        <p>Bad orientation is a leading cause of print failures. OrientIQ catches risky orientations before they reach the printer — saving filament, time, and frustration.</p>
       </div>
     </div>
   </section>
@@ -458,11 +750,94 @@
     </div>
   </section>
 
+  <!-- PRICING -->
+  <section class="pricing" id="pricing">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Simple plans for every farm size</h2>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <h3>Starter</h3>
+        <div class="price">$29<span>/mo</span></div>
+        <ul>
+          <li>Up to 100 parts/month</li>
+          <li>Single-plate optimization</li>
+          <li>STL + 3MF support</li>
+        </ul>
+        <button class="pricing-btn" onclick="handlePricingClick('Starter')">Choose Plan</button>
+      </div>
+      <div class="pricing-card featured">
+        <div class="pricing-popular">Most Popular</div>
+        <h3>Pro</h3>
+        <div class="price">$99<span>/mo</span></div>
+        <ul>
+          <li>Unlimited parts</li>
+          <li>Multi-plate packing</li>
+          <li>Priority queue</li>
+          <li>API access</li>
+        </ul>
+        <button class="pricing-btn" onclick="handlePricingClick('Pro')">Choose Plan</button>
+      </div>
+      <div class="pricing-card">
+        <h3>Enterprise</h3>
+        <div class="price">Custom</div>
+        <ul>
+          <li>Everything in Pro</li>
+          <li>On-premise option</li>
+          <li>Dedicated support</li>
+          <li>Custom integrations</li>
+        </ul>
+        <button class="pricing-btn" onclick="handlePricingClick('Enterprise')">Contact Us</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING MODAL -->
+  <div class="modal-overlay" id="pricingModal">
+    <div class="modal">
+      <button class="modal-close" onclick="closePricingModal()">&times;</button>
+      <h3>We're still in the lab.</h3>
+      <p>Join the waitlist for a <strong>50% Early Adopter discount</strong> when we launch.</p>
+      <p class="modal-tier" id="modalTier"></p>
+      <form class="waitlist-form" onsubmit="handlePricingSubmit(event)">
+        <input type="email" placeholder="your@email.com" required />
+        <button type="submit">Get Early Access</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <section class="faq">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">Common questions</h2>
+    <div class="faq-list">
+      <details class="faq-item">
+        <summary>When does OrientIQ launch?</summary>
+        <p>We're targeting a private beta in 2026. Join the waitlist to get early access.</p>
+      </details>
+      <details class="faq-item">
+        <summary>What file formats are supported?</summary>
+        <p>STL and 3MF at launch, with STEP and OBJ on the roadmap.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Is it free during the beta?</summary>
+        <p>Yes. Early adopters get free access during the beta period and a 50% lifetime discount when we go paid.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Which slicers does it work with?</summary>
+        <p>OrientIQ outputs files ready for Bambu Studio, PrusaSlicer, OrcaSlicer, and Cura.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Are my files safe?</summary>
+        <p>Files are processed in memory and deleted immediately. We never store your designs.</p>
+      </details>
+    </div>
+  </section>
+
   <!-- CTA BOTTOM -->
   <section class="cta-bottom">
     <div class="section-label">Early Access</div>
     <h2>Be first when we launch</h2>
-    <p>We're building OrientIQ based on real pain points from thousands of print farm operators. Join the waitlist to shape what we build — and get early access.</p>
+    <p>We analyzed 4,400+ data points across GitHub, Reddit, and YouTube to understand exactly what print farm operators struggle with. OrientIQ is built to solve those problems. Join the waitlist to shape what we build — and get early access.</p>
     <form class="waitlist-form" style="justify-content:center" onsubmit="handleSubmit(event)">
       <input type="email" placeholder="your@email.com" required />
       <button type="submit">Join Waitlist</button>
@@ -476,16 +851,77 @@
   </footer>
 
   <script>
+    // UTM referral tracking
+    const ref = new URLSearchParams(window.location.search).get('ref') || '(direct)';
+
+    // Waitlist form handler
     function handleSubmit(e) {
       e.preventDefault();
       const email = e.target.querySelector('input[type="email"]').value;
-      // Replace this URL with your Tally/Typeform/Mailchimp endpoint
-      console.log('Waitlist signup:', email);
-      document.getElementById('success').style.display = 'block';
-      e.target.reset();
-      e.target.querySelector('button').textContent = 'You\'re in!';
-      e.target.querySelector('button').disabled = true;
+      console.log('Waitlist signup:', { email, ref });
+      window._signupEmail = email;
+
+      // Hide form and form note
+      e.target.style.display = 'none';
+      const note = e.target.parentElement.querySelector('.form-note');
+      if (note) note.style.display = 'none';
+
+      // Show survey (hero form) or simple confirmation (bottom form)
+      const survey = e.target.parentElement.querySelector('.survey');
+      if (survey) {
+        survey.style.display = 'block';
+      } else {
+        e.target.insertAdjacentHTML('afterend', '<p style="color:var(--success);font-weight:600;">You\'re on the list!</p>');
+      }
     }
+
+    // Survey helpers
+    function selectOption(btn) {
+      btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    }
+
+    function submitSurvey() {
+      const answers = {};
+      document.querySelectorAll('.survey-options').forEach(group => {
+        const selected = group.querySelector('.selected');
+        answers[group.dataset.question] = selected ? selected.textContent : null;
+      });
+      console.log('Survey response:', { email: window._signupEmail, ref, ...answers });
+      document.querySelector('.survey-questions').style.display = 'none';
+      document.querySelector('.survey-submit').style.display = 'none';
+      document.getElementById('surveyThanks').style.display = 'block';
+    }
+
+    // Pricing fake door
+    let selectedTier = '';
+
+    function handlePricingClick(tier) {
+      selectedTier = tier;
+      console.log('Pricing intent:', { tier, ref });
+      document.getElementById('modalTier').textContent = 'Selected plan: ' + tier;
+      document.getElementById('pricingModal').classList.add('active');
+    }
+
+    function closePricingModal() {
+      document.getElementById('pricingModal').classList.remove('active');
+    }
+
+    function handlePricingSubmit(e) {
+      e.preventDefault();
+      const email = e.target.querySelector('input[type="email"]').value;
+      console.log('Pricing signup:', { email, tier: selectedTier, ref });
+      closePricingModal();
+      document.getElementById('waitlist').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Close modal on overlay click or Escape
+    document.getElementById('pricingModal').addEventListener('click', function(e) {
+      if (e.target === this) closePricingModal();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closePricingModal();
+    });
 
     // Smooth scroll
     document.querySelectorAll('a[href^="#"]').forEach(a => {

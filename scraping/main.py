@@ -62,17 +62,14 @@ def main():
     if args.dry_run:
         logger.info("DRY RUN MODE - no data will be written")
 
-    # Reddit (skip if no credentials)
-    if os.getenv("REDDIT_CLIENT_ID"):
-        try:
-            logger.info("Starting Reddit scraper...")
-            from scrapers import scrape_reddit
-            count = scrape_reddit(max_posts=args.max_posts, dry_run=args.dry_run)
-            logger.info(f"Reddit: {count} new posts")
-        except Exception:
-            logger.error(f"Reddit scraper failed:\n{traceback.format_exc()}")
-    else:
-        logger.info("Skipping Reddit scraper (REDDIT_CLIENT_ID not set)")
+    # Reddit
+    try:
+        logger.info("Starting Reddit scraper...")
+        from scrapers import scrape_reddit
+        count = scrape_reddit(max_posts=args.max_posts, dry_run=args.dry_run)
+        logger.info(f"Reddit: {count} new posts")
+    except Exception:
+        logger.error(f"Reddit scraper failed:\n{traceback.format_exc()}")
 
     # GitHub
     try:

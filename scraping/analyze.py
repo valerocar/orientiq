@@ -241,11 +241,68 @@ def process_youtube():
     return total, relevant, len(pain_points)
 
 
+def process_reddit():
+    filepath = os.path.join(RAW_DIR, "reddit.jsonl")
+    output_file = os.path.join(OUTPUT_DIR, "pain_points_reddit.jsonl")
+    pain_points = []
+    total = 0
+    relevant = 0
+
+    if not os.path.exists(filepath):
+        return 0, 0, 0
+
+    with open(filepath, "r") as f:
+        lines = f.readlines()
+
+    with open(output_file, "w") as out:
+        for line in lines:
+            try:
+                post = json.loads(line.strip())
+            except json.JSONDecodeError:
+                continue
+
+            total += 1
+            title = post.get("title", "")
+            body = post.get("body", "") or ""
+            comments_text = " ".join(
+                c.get("body", "") for c in post.get("comments", []) if c.get("body")
+            )
+            full_text = f"{title} {body} {comments_text}"
+
+            if not is_relevant(full_text):
+                continue
+
+            relevant += 1
+            cat = categorize(full_text)
+            if not cat:
+                continue
+
+            record = {
+                "description": title,
+                "category": cat,
+                "severity": severity(full_text),
+                "user_type": user_type(full_text),
+                "source_quote": extract_quote(full_text),
+                "workaround": None,
+                "source_url": post.get("url", ""),
+                "source_score": post.get("score", 0),
+                "subreddit": post.get("subreddit", ""),
+                "source": "reddit",
+            }
+            out.write(json.dumps(record) + "\n")
+            pain_points.append(record)
+
+    with open(PROGRESS_FILE, "a") as pf:
+        pf.write(f"Reddit: {total} posts, {relevant} relevant\n")
+
+    return total, relevant, len(pain_points)
+
+
 def merge_and_rank():
     """Load all pain points, deduplicate by title similarity, rank by score."""
     all_points = []
 
-    for fname in ["pain_points_github.jsonl", "pain_points_youtube.jsonl"]:
+    for fname in ["pain_points_github.jsonl", "pain_points_youtube.jsonl", "pain_points_reddit.jsonl"]:
         fpath = os.path.join(OUTPUT_DIR, fname)
         if not os.path.exists(fpath):
             continue
@@ -293,6 +350,7 @@ def merge_and_rank():
             "sources_breakdown": {
                 "github": sum(1 for p in all_points if p.get("source") == "github"),
                 "youtube": sum(1 for p in all_points if p.get("source") == "youtube"),
+                "reddit": sum(1 for p in all_points if p.get("source") == "reddit"),
             },
             "generated_at": datetime.now().isoformat(),
         },
@@ -319,11 +377,15 @@ def main():
     y_total, y_relevant, y_points = process_youtube()
     print(f"  YouTube: {y_total} videos → {y_relevant} relevant → {y_points} pain points")
 
+    print("Processing Reddit posts...")
+    r_total, r_relevant, r_points = process_reddit()
+    print(f"  Reddit: {r_total} posts → {r_relevant} relevant → {r_points} pain points")
+
     print("Merging and ranking...")
     output = merge_and_rank()
     meta = output["metadata"]
     print(f"  Total pain points: {meta['total_pain_points']}")
-    print(f"  GitHub: {meta['sources_breakdown']['github']}, YouTube: {meta['sources_breakdown']['youtube']}")
+    print(f"  GitHub: {meta['sources_breakdown'].get('github',0)}, YouTube: {meta['sources_breakdown'].get('youtube',0)}, Reddit: {meta['sources_breakdown'].get('reddit',0)}")
     print(f"\nTop categories:")
     for cat in output["ranked_categories"][:5]:
         print(f"  [{cat['rank']}] {cat['category']}: {cat['count']} issues (signal: {cat['signal_score']})")
