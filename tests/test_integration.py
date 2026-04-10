@@ -11,7 +11,7 @@ def test_cube_build_height_face_aligned(cube_mesh):
         normals, areas, vertices,
         lam=0.0,
         n_samples=500,
-        n_refine=5,
+
     )
     g = result.gravity_direction
 
@@ -34,7 +34,7 @@ def test_cube_build_height_optimal(cube_mesh):
         normals, areas, vertices,
         lam=0.0,  # height only
         n_samples=500,
-        n_refine=5,
+
     )
     # Face-aligned gives height=1.0, diagonal gives sqrt(3) ≈ 1.73
     assert result.build_height < 1.05

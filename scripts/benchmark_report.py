@@ -20,7 +20,6 @@ MODELS_DIR = Path(__file__).resolve().parent.parent / "3dmodels"
 OUTPUT_FILE = Path(__file__).resolve().parent.parent / "results" / "report.html"
 MAX_FACES = 10_000
 N_SAMPLES = 500
-N_REFINE = 0  # coarse grid only, no gradient refinement
 
 
 def _face_colors(verts, faces, normals, gravity, angle=45.0):
@@ -169,7 +168,7 @@ def _process_one(stl_path):
     # Column 3: Optimize for overhang area (pick best from coarse grid)
     overhang_result = coarse_then_refine(
         normals=normals, areas=areas, vertices=vertices,
-        lam=1.0, n_samples=N_SAMPLES, n_refine=N_REFINE,
+        lam=1.0, n_samples=N_SAMPLES,
     )
     o_overhang = compute_overhang(
         normals, areas, overhang_result.gravity_direction.reshape(1, 3)

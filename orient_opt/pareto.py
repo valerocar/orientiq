@@ -121,7 +121,6 @@ def pareto_front(
             lam=lam,
             overhang_angle=overhang_angle,
             n_samples=n_samples,
-            n_refine=3,
         )
         results.append(result)
 

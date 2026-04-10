@@ -182,7 +182,7 @@ def optimize(req: OptimizeRequest):
     if req.objective == "overhang":
         result = coarse_then_refine(
             normals=on, areas=opt_areas, vertices=ov,
-            lam=1.0, n_samples=N_SAMPLES_SINGLE, n_refine=5,
+            lam=1.0, n_samples=N_SAMPLES_SINGLE,
         )
         best_g = result.gravity_direction
         orig_val = float(overhang(on, opt_areas, g_z)[0])
@@ -216,7 +216,7 @@ def optimize(req: OptimizeRequest):
     else:  # build_height
         result = coarse_then_refine(
             normals=on, areas=opt_areas, vertices=ov,
-            lam=0.0, n_samples=N_SAMPLES_SINGLE, n_refine=5,
+            lam=0.0, n_samples=N_SAMPLES_SINGLE,
         )
         best_g = result.gravity_direction
         orig_val = float(build_height(ov, g_z)[0])
@@ -442,6 +442,14 @@ def critical_points(req: CriticalPointsRequest):
         objective_fn, gradient_fn, n_samples=req.n_samples
     )
 
+    # Only return the global minimum
+    minima = [cp for cp in cps if cp.cp_type == "min"]
+    if minima:
+        global_min = min(minima, key=lambda cp: cp.f_value)
+        result = [global_min]
+    else:
+        result = []
+
     return [
         {
             "g": cp.g.tolist(),
@@ -449,7 +457,7 @@ def critical_points(req: CriticalPointsRequest):
             "f_value": cp.f_value,
             "grad_norm": cp.grad_norm,
         }
-        for cp in cps
+        for cp in result
     ]
 
 

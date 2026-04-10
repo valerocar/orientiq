@@ -18,8 +18,6 @@ def main():
                         help="Overhang threshold angle in degrees (default: 45)")
     parser.add_argument("--n-samples", type=int, default=500,
                         help="Number of sample points on S² (default: 500)")
-    parser.add_argument("--n-refine", type=int, default=5,
-                        help="Number of candidates for gradient refinement (default: 5)")
     parser.add_argument("--beta", type=float, default=50.0,
                         help="Sigmoid sharpness (default: 50)")
 
@@ -32,7 +30,6 @@ def main():
         lam=args.lam,
         overhang_angle=args.overhang_angle,
         n_samples=args.n_samples,
-        n_refine=args.n_refine,
         beta=args.beta,
     )
 

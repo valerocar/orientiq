@@ -26,7 +26,6 @@ def optimize_orientation(
     overhang_angle: float = 45.0,
     n_samples: int = 500,
     beta: float = 50.0,
-    n_refine: int = 5,
 ) -> OrientationResult:
     """Find the optimal 3D printing orientation for a triangle mesh.
 
@@ -40,7 +39,6 @@ def optimize_orientation(
         overhang_angle: threshold angle in degrees.
         n_samples: number of Fibonacci sphere sample points.
         beta: sigmoid sharpness for gradient-based refinement.
-        n_refine: number of top candidates to refine via gradient descent.
 
     Returns:
         OrientationResult with optimal quaternion, rotation matrix, and diagnostics.
@@ -55,7 +53,6 @@ def optimize_orientation(
         overhang_angle=overhang_angle,
         n_samples=n_samples,
         beta=beta,
-        n_refine=n_refine,
     )
 
 

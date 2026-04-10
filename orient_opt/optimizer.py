@@ -48,7 +48,6 @@ def coarse_then_refine(
     overhang_angle: float = 45.0,
     n_samples: int = 500,
     beta: float = 50.0,
-    n_refine: int = 5,
     eta: float = 0.05,
     tol: float = 1e-6,
     max_iter: int = 300,
@@ -99,36 +98,28 @@ def coarse_then_refine(
     # Collect all objectives for debugging
     all_objectives = np.column_stack([feas_oh, feas_bh])
 
-    # Select best from coarse grid
-    best_coarse_idx = np.argmin(scores)
-    best_g = feas_candidates[best_coarse_idx].copy()
+    def _objective(g):
+        g2 = g.reshape(1, 3)
+        o = overhang_smooth(normals, areas, g2, angle=overhang_angle, beta=beta)[0]
+        h = build_height(vertices, g2)[0]
+        o_hat = (o - oh_min) / oh_range
+        h_hat = (h - bh_min) / bh_range
+        return lam * o_hat + (1 - lam) * h_hat
 
-    # Optionally refine top K via gradient descent
-    if n_refine > 0:
-        k = min(n_refine, len(feas_candidates))
-        top_indices = np.argsort(scores)[:k]
+    def _gradient(g):
+        grad_o = overhang_smooth_gradient(g, normals, areas, angle=overhang_angle, beta=beta)
+        grad_h = build_height_gradient(g, vertices)
+        return lam * grad_o / oh_range + (1 - lam) * grad_h / bh_range
 
-        def _objective(g):
-            g2 = g.reshape(1, 3)
-            o = overhang_smooth(normals, areas, g2, angle=overhang_angle, beta=beta)[0]
-            h = build_height(vertices, g2)[0]
-            o_hat = (o - oh_min) / oh_range
-            h_hat = (h - bh_min) / bh_range
-            return lam * o_hat + (1 - lam) * h_hat
-
-        def _gradient(g):
-            grad_o = overhang_smooth_gradient(g, normals, areas, angle=overhang_angle, beta=beta)
-            grad_h = build_height_gradient(g, vertices)
-            return lam * grad_o / oh_range + (1 - lam) * grad_h / bh_range
-
-        best_score = _objective(best_g)
-        for idx in top_indices:
-            g0 = feas_candidates[idx]
-            g_refined = riemannian_gd(g0, _objective, _gradient, eta=eta, tol=tol, max_iter=max_iter)
-            score = _objective(g_refined)
-            if score < best_score:
-                best_score = score
-                best_g = g_refined
+    # Refine all feasible candidates via gradient descent
+    best_score = float("inf")
+    best_g = feas_candidates[np.argmin(scores)].copy()
+    for i in range(len(feas_candidates)):
+        g_refined = riemannian_gd(feas_candidates[i], _objective, _gradient, eta=eta, tol=tol, max_iter=max_iter)
+        score = _objective(g_refined)
+        if score < best_score:
+            best_score = score
+            best_g = g_refined
 
     # Compute final objective values at best_g
     g2 = best_g.reshape(1, 3)
