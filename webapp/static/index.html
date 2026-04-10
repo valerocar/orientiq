@@ -79,6 +79,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
         <option value="surface_quality">Surface Quality</option>
         <option value="stability">Stability</option>
     </select>
+    <select id="sphere-mode">
+        <option value="ico">Mesh</option>
+        <option value="fib">Points</option>
+    </select>
     <!-- Pair mode controls -->
     <div class="pair-group hidden" id="pair-controls">
         <label>A:</label>
@@ -127,6 +131,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ---- Binary parsers ----
 function parseMeshBinary(buffer) {
@@ -161,7 +166,8 @@ function parseParetoBinary(buffer) {
 }
 
 // ---- Objective sphere overlay ----
-const N_FIB = 10000; // Fibonacci sphere sample count
+const N_FIB = 50000; // Fibonacci sphere sample count
+const ICO_DETAIL = 5; // icosahedron subdivision level (~10k vertices)
 let overlayState = null;
 let cachedLeftMeshData = null; // {nFaces, nVerts, normals, vertices, areas, centroids}
 
@@ -270,10 +276,24 @@ function initOverlay() {
     overlayState = { renderer, scene, camera, controls, group: null, marker: null };
     resizeOverlay();
 
-    // Double-click on sphere → rotate optimized model to nearest Fibonacci point
+    // Double-click on sphere → rotate optimized model to clicked direction
     const overlayRaycaster = new THREE.Raycaster();
     overlayRaycaster.params.Points = { threshold: 0.1 };
     const overlayMouse = new THREE.Vector2();
+
+    function hitToGravity(hit) {
+        const ud = overlayState.group.userData;
+        if (ud.fibPts) {
+            // Points mode — use point index directly
+            const i = hit.index;
+            return [ud.fibPts[i*3], ud.fibPts[i*3+1], ud.fibPts[i*3+2]];
+        }
+        // Ico mesh mode — use hit point on sphere surface (already unit sphere)
+        const p = hit.point;
+        const len = Math.sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+        return [p.x/len, p.y/len, p.z/len];
+    }
+
     renderer.domElement.addEventListener('dblclick', async (e) => {
         if (mode !== 'single' || !overlayState.group) return;
         const rect = renderer.domElement.getBoundingClientRect();
@@ -281,14 +301,12 @@ function initOverlay() {
         overlayMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
         overlayRaycaster.setFromCamera(overlayMouse, camera);
-        const pointCloud = overlayState.group.getObjectByName('objSphere');
-        if (!pointCloud) return;
-        const hits = overlayRaycaster.intersectObject(pointCloud);
+        const obj = overlayState.group.getObjectByName('objSphere');
+        if (!obj) return;
+        const hits = overlayRaycaster.intersectObject(obj);
         if (hits.length === 0) return;
 
-        const pi = hits[0].index;
-        const pts = overlayState.group.userData.fibPts;
-        const gx = pts[pi*3], gy = pts[pi*3+1], gz = pts[pi*3+2];
+        const [gx, gy, gz] = hitToGravity(hits[0]);
 
         moveMarker(gx*1.02, gy*1.02, gz*1.02);
 
@@ -312,27 +330,36 @@ function initOverlay() {
         document.getElementById('loading-right').style.display = 'none';
     });
 
-    // Hover over point cloud → show tooltip with objective value
+    // Hover over sphere → show tooltip with objective value
     const hoverRaycaster = new THREE.Raycaster();
     hoverRaycaster.params.Points = { threshold: 0.06 };
     const hoverMouse = new THREE.Vector2();
     const tooltip = document.getElementById('sphere-tooltip');
 
+    function hitToValue(hit) {
+        const ud = overlayState.group.userData;
+        if (ud.fibValues) return ud.fibValues[hit.index];
+        // Ico mesh — evaluate at hit point
+        const p = hit.point;
+        const len = Math.sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+        const objective = document.getElementById('objective-select').value;
+        return evalObjective(objective, p.x/len, p.y/len, p.z/len, cachedLeftMeshData);
+    }
+
     renderer.domElement.addEventListener('mousemove', (e) => {
         if (!overlayState.group) { tooltip.style.display = 'none'; return; }
-        const pointCloud = overlayState.group.getObjectByName('objSphere');
-        if (!pointCloud) { tooltip.style.display = 'none'; return; }
+        const obj = overlayState.group.getObjectByName('objSphere');
+        if (!obj) { tooltip.style.display = 'none'; return; }
 
         const rect = renderer.domElement.getBoundingClientRect();
         hoverMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         hoverMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
         hoverRaycaster.setFromCamera(hoverMouse, camera);
-        const hits = hoverRaycaster.intersectObject(pointCloud);
+        const hits = hoverRaycaster.intersectObject(obj);
         if (hits.length === 0) { tooltip.style.display = 'none'; return; }
 
-        const pi = hits[0].index;
-        const val = overlayState.group.userData.fibValues[pi];
+        const val = hitToValue(hits[0]);
         tooltip.textContent = val.toFixed(3);
         const overlayRect = document.getElementById('sphere-overlay').getBoundingClientRect();
         tooltip.style.left = (e.clientX - overlayRect.left + 10) + 'px';
@@ -428,6 +455,49 @@ function buildObjectiveSphere(meshData, objective) {
     return group;
 }
 
+function buildIcoSphere(meshData, objective) {
+    const group = new THREE.Group();
+    const geom = new THREE.IcosahedronGeometry(1, ICO_DETAIL);
+    // Merge duplicate vertices so vertex colors interpolate smoothly across shared edges
+    const merged = mergeVertices(geom);
+    const pos = merged.attributes.position;
+    const nV = pos.count;
+
+    // Evaluate objective at each vertex
+    const values = new Float32Array(nV);
+    let vMin = Infinity, vMax = -Infinity, bestIdx = 0;
+    for (let i = 0; i < nV; i++) {
+        const val = evalObjective(objective, pos.getX(i), pos.getY(i), pos.getZ(i), meshData);
+        values[i] = val;
+        if (val < vMin) { vMin = val; bestIdx = i; }
+        if (val > vMax) vMax = val;
+    }
+
+    // Color vertices
+    const range = vMax - vMin || 1;
+    const colors = new Float32Array(nV * 3);
+    for (let i = 0; i < nV; i++) {
+        const t = (values[i] - vMin) / range;
+        const [r, g, b] = viridis(t);
+        colors[i*3] = r; colors[i*3+1] = g; colors[i*3+2] = b;
+    }
+    merged.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const sphereMesh = new THREE.Mesh(merged, new THREE.MeshPhongMaterial({
+        vertexColors: true, side: THREE.DoubleSide,
+    }));
+    sphereMesh.name = 'objSphere';
+    group.add(sphereMesh);
+
+    // Store vertex data for raycasting
+    group.userData.icoPositions = pos;
+    group.userData.icoValues = values;
+    group.userData.icoIndex = merged.index;
+    group.userData.bestPos = [pos.getX(bestIdx)*1.02, pos.getY(bestIdx)*1.02, pos.getZ(bestIdx)*1.02];
+
+    return group;
+}
+
 function moveMarker(x, y, z) {
     if (!overlayState) return;
     if (overlayState.marker) {
@@ -444,7 +514,10 @@ function moveMarker(x, y, z) {
 function updateOverlaySphere(objective) {
     if (!overlayState || !cachedLeftMeshData) return;
     clearOverlay();
-    overlayState.group = buildObjectiveSphere(cachedLeftMeshData, objective);
+    const sphereMode = document.getElementById('sphere-mode').value;
+    overlayState.group = sphereMode === 'ico'
+        ? buildIcoSphere(cachedLeftMeshData, objective)
+        : buildObjectiveSphere(cachedLeftMeshData, objective);
     overlayState.scene.add(overlayState.group);
     // Place marker at best direction
     const bp = overlayState.group.userData.bestPos;
@@ -839,6 +912,7 @@ function setMode(m) {
     document.getElementById('btn-single').classList.toggle('active', m === 'single');
     document.getElementById('btn-pair').classList.toggle('active', m === 'pair');
     document.getElementById('objective-select').classList.toggle('hidden', m !== 'single');
+    document.getElementById('sphere-mode').classList.toggle('hidden', m !== 'single');
     document.getElementById('pair-controls').classList.toggle('hidden', m !== 'pair');
     document.getElementById('sphere-overlay').style.display = m === 'single' ? '' : 'none';
     if (m !== 'single') clearOverlay();
@@ -856,6 +930,12 @@ document.getElementById('objective-select').addEventListener('change', () => {
         const obj = document.getElementById('objective-select').value;
         updateOverlaySphere(obj);
         runSingleOptimize(models[currentIndex].name);
+    }
+});
+document.getElementById('sphere-mode').addEventListener('change', () => {
+    if (mode === 'single' && models.length > 0) {
+        const obj = document.getElementById('objective-select').value;
+        updateOverlaySphere(obj);
     }
 });
 document.getElementById('obj-a').addEventListener('change', () => {
