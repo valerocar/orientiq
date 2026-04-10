@@ -83,6 +83,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
         <option value="ico">Mesh</option>
         <option value="fib">Points</option>
     </select>
+    <label id="height-label" style="margin-left:8px;color:#aaa;font-size:12px">
+        Max H: <input type="range" id="height-slider" min="0" max="1" step="0.001" value="1" style="width:100px;vertical-align:middle">
+        <span id="height-value"></span>
+    </label>
     <!-- Pair mode controls -->
     <div class="pair-group hidden" id="pair-controls">
         <label>A:</label>
@@ -414,27 +418,53 @@ function buildObjectiveSphere(meshData, objective) {
     const group = new THREE.Group();
     const pts = fibonacciSphere(N_FIB);
 
-    // Evaluate objective at each point
+    // Evaluate objective and build height at each point
     const values = new Float32Array(N_FIB);
+    const heights = new Float32Array(N_FIB);
     let vMin = Infinity, vMax = -Infinity, bestIdx = 0;
+    let hMin = Infinity, hMax = -Infinity;
     for (let i = 0; i < N_FIB; i++) {
-        const val = evalObjective(objective, pts[i*3], pts[i*3+1], pts[i*3+2], meshData);
+        const gx = pts[i*3], gy = pts[i*3+1], gz = pts[i*3+2];
+        const val = evalObjective(objective, gx, gy, gz, meshData);
+        const h = evalObjective('build_height', gx, gy, gz, meshData);
         values[i] = val;
+        heights[i] = h;
         if (val < vMin) { vMin = val; bestIdx = i; }
         if (val > vMax) vMax = val;
+        if (h < hMin) hMin = h;
+        if (h > hMax) hMax = h;
     }
 
-    // Build colored point cloud
+    // Sort indices by height (ascending) so drawRange can filter by height cap
+    const sortedIdx = Array.from({length: N_FIB}, (_, i) => i);
+    sortedIdx.sort((a, b) => heights[a] - heights[b]);
+
+    // Build sorted arrays
     const range = vMax - vMin || 1;
     const positions = new Float32Array(N_FIB * 3);
     const colors = new Float32Array(N_FIB * 3);
-    for (let i = 0; i < N_FIB; i++) {
-        positions[i*3] = pts[i*3];
-        positions[i*3+1] = pts[i*3+1];
-        positions[i*3+2] = pts[i*3+2];
+    const sortedValues = new Float32Array(N_FIB);
+    const sortedHeights = new Float32Array(N_FIB);
+    const sortedPts = new Float32Array(N_FIB * 3);
+    for (let j = 0; j < N_FIB; j++) {
+        const i = sortedIdx[j];
+        sortedPts[j*3] = pts[i*3];
+        sortedPts[j*3+1] = pts[i*3+1];
+        sortedPts[j*3+2] = pts[i*3+2];
+        positions[j*3] = pts[i*3];
+        positions[j*3+1] = pts[i*3+1];
+        positions[j*3+2] = pts[i*3+2];
+        sortedValues[j] = values[i];
+        sortedHeights[j] = heights[i];
         const t = (values[i] - vMin) / range;
         const [r, g, b] = viridis(t);
-        colors[i*3] = r; colors[i*3+1] = g; colors[i*3+2] = b;
+        colors[j*3] = r; colors[j*3+1] = g; colors[j*3+2] = b;
+    }
+
+    // Find bestIdx in sorted order
+    let sortedBestIdx = 0;
+    for (let j = 0; j < N_FIB; j++) {
+        if (sortedIdx[j] === bestIdx) { sortedBestIdx = j; break; }
     }
 
     const geom = new THREE.BufferGeometry();
@@ -447,10 +477,13 @@ function buildObjectiveSphere(meshData, objective) {
     points.name = 'objSphere';
     group.add(points);
 
-    // Store point data for raycasting and best position
-    group.userData.fibPts = pts;
-    group.userData.fibValues = values;
-    group.userData.bestPos = [pts[bestIdx*3]*1.02, pts[bestIdx*3+1]*1.02, pts[bestIdx*3+2]*1.02];
+    // Store data for raycasting, height filtering, and best position
+    group.userData.fibPts = sortedPts;
+    group.userData.fibValues = sortedValues;
+    group.userData.fibHeights = sortedHeights;
+    group.userData.hMin = hMin;
+    group.userData.hMax = hMax;
+    group.userData.bestPos = [sortedPts[sortedBestIdx*3]*1.02, sortedPts[sortedBestIdx*3+1]*1.02, sortedPts[sortedBestIdx*3+2]*1.02];
 
     return group;
 }
@@ -527,6 +560,47 @@ function updateOverlaySphere(objective) {
     requestAnimationFrame(() => resizeOverlay());
     const pretty = { overhang:'Overhang', support_volume:'Sup. Volume', build_height:'Height', surface_quality:'Surf. Quality', stability:'Stability' };
     document.getElementById('sphere-overlay-label').textContent = pretty[objective] || objective;
+
+    // Configure height slider from mesh data
+    const ud = overlayState.group.userData;
+    const slider = document.getElementById('height-slider');
+    const label = document.getElementById('height-label');
+    if (ud.hMin !== undefined) {
+        slider.min = ud.hMin.toFixed(3);
+        slider.max = ud.hMax.toFixed(3);
+        slider.step = ((ud.hMax - ud.hMin) / 500).toFixed(4);
+        slider.value = ud.hMax.toFixed(3);
+        document.getElementById('height-value').textContent = ud.hMax.toFixed(1);
+        label.style.display = '';
+    } else {
+        label.style.display = 'none';
+    }
+}
+
+function applyHeightConstraint() {
+    if (!overlayState || !overlayState.group) return;
+    const ud = overlayState.group.userData;
+    if (!ud.fibHeights) return;
+
+    const maxH = parseFloat(document.getElementById('height-slider').value);
+    document.getElementById('height-value').textContent = maxH.toFixed(1);
+
+    // Since points are sorted by height, find how many pass the constraint
+    const heights = ud.fibHeights;
+    let count = heights.length;
+    // Binary search for the cutoff
+    let lo = 0, hi = heights.length;
+    while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (heights[mid] <= maxH) lo = mid + 1;
+        else hi = mid;
+    }
+    count = lo;
+
+    const pointCloud = overlayState.group.getObjectByName('objSphere');
+    if (pointCloud) {
+        pointCloud.geometry.setDrawRange(0, count);
+    }
 }
 
 // ---- State ----
@@ -913,6 +987,7 @@ function setMode(m) {
     document.getElementById('btn-pair').classList.toggle('active', m === 'pair');
     document.getElementById('objective-select').classList.toggle('hidden', m !== 'single');
     document.getElementById('sphere-mode').classList.toggle('hidden', m !== 'single');
+    document.getElementById('height-label').style.display = m === 'single' ? '' : 'none';
     document.getElementById('pair-controls').classList.toggle('hidden', m !== 'pair');
     document.getElementById('sphere-overlay').style.display = m === 'single' ? '' : 'none';
     if (m !== 'single') clearOverlay();
@@ -937,6 +1012,9 @@ document.getElementById('sphere-mode').addEventListener('change', () => {
         const obj = document.getElementById('objective-select').value;
         updateOverlaySphere(obj);
     }
+});
+document.getElementById('height-slider').addEventListener('input', () => {
+    applyHeightConstraint();
 });
 document.getElementById('obj-a').addEventListener('change', () => {
     if (mode === 'pair' && models.length > 0) runParetoAnalysis(models[currentIndex].name);
