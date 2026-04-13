@@ -263,8 +263,26 @@
     .feature-card:hover { border-color: var(--accent); }
 
     .feature-icon {
-      font-size: 1.75rem;
+      width: 2.9rem;
+      height: 2.9rem;
       margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    .feature-icon img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      opacity: 0.95;
+      filter: drop-shadow(0 0 10px rgba(108, 99, 255, 0.2));
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    .feature-card:hover .feature-icon img {
+      transform: translateY(-1px) scale(1.02);
+      opacity: 1;
     }
 
     .feature-card h3 {
@@ -278,6 +296,24 @@
       font-size: 0.9rem;
       color: var(--muted);
       line-height: 1.6;
+    }
+
+    .step-icon {
+      width: 2.9rem;
+      height: 2.9rem;
+      margin: 0 0 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-icon img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      opacity: 0.95;
+      filter: drop-shadow(0 0 10px rgba(108, 99, 255, 0.2));
+      transition: transform 0.2s ease, opacity 0.2s ease;
     }
 
     /* WHO IT'S FOR */
@@ -548,6 +584,25 @@
       width: 100%;
     }
 
+    .form-status {
+      margin-top: 0.65rem;
+      font-size: 0.82rem;
+      font-weight: 600;
+      display: none;
+    }
+
+    .form-status.success { color: var(--success); }
+    .form-status.error { color: #ff6b6b; }
+
+    .hp-field {
+      position: absolute;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
     /* FOOTER */
     footer {
       border-top: 1px solid var(--border);
@@ -584,8 +639,10 @@
     <div id="waitlist">
       <form class="waitlist-form" onsubmit="handleSubmit(event)">
         <input type="email" placeholder="your@email.com" required />
+        <input class="hp-field" type="text" name="company" tabindex="-1" autocomplete="off" />
         <button type="submit">Join Waitlist</button>
       </form>
+      <p class="form-status" data-role="waitlist-status"></p>
       <p class="form-note">No spam. Early access when we launch.</p>
       <div class="survey" id="survey" style="display:none;">
         <p class="success-msg" style="display:block">You're on the list!</p>
@@ -619,8 +676,10 @@
             </div>
           </div>
         </div>
+        <input class="hp-field" id="survey-hp" type="text" name="company" tabindex="-1" autocomplete="off" />
         <button class="survey-submit" onclick="submitSurvey()">Submit</button>
         <p id="surveyThanks" style="display:none;color:var(--success);font-weight:600;margin-top:0.75rem;">Thanks! That helps a lot.</p>
+        <p class="form-status" id="surveyStatus"></p>
       </div>
     </div>
 
@@ -657,38 +716,52 @@
     <h2 class="section-title">One tool. Every problem solved.</h2>
     <div class="feature-grid">
       <div class="feature-card">
-        <div class="feature-icon">🎯</div>
+        <div class="feature-icon">
+          <img src="assets/icons/multi-objective.svg" alt="Multi-objective optimization icon" />
+        </div>
         <h3>Multi-Objective Optimization</h3>
         <p>Set your priorities — surface quality, support volume, strength, print time. OrientIQ finds the orientation that best balances all of them, not just one.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🧱</div>
+        <div class="feature-icon">
+          <img src="assets/icons/filament-savings.svg" alt="Material savings icon" />
+        </div>
         <h3>Save Kilograms of Filament</h3>
         <p>Reduce support material by up to 60%. Less waste, less post-processing labor, more profit per plate.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">📦</div>
+        <div class="feature-icon">
+          <img src="assets/icons/plate-packing.svg" alt="Build plate packing icon" />
+        </div>
         <h3>Maximize Every Build Plate</h3>
         <p>Upload 50 parts, get back 5 optimally packed plates. Fill every square centimeter and push throughput higher.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">☁️</div>
+        <div class="feature-icon">
+          <img src="assets/icons/browser-cloud.svg" alt="Browser workflow icon" />
+        </div>
         <h3>Works in Your Browser</h3>
         <p>Upload one file or a whole batch — get back optimized files ready to slice. No software to install, no plugins, no setup.</p>
         <div class="privacy-badge">Files processed and deleted instantly. We never store your designs.</div>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">🔒</div>
+        <div class="feature-icon">
+          <img src="assets/icons/orientation-lock.svg" alt="Orientation lock icon" />
+        </div>
         <h3>Orientation Lock</h3>
         <p>Lock the orientation of specific parts before batch arrangement. Your careful choices stay intact when auto-arrange runs.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">💬</div>
+        <div class="feature-icon">
+          <img src="assets/icons/tradeoff-clarity.svg" alt="Trade-off clarity icon" />
+        </div>
         <h3>You Stay in Control</h3>
         <p>"Rotated 45° — supports −38%, print time +12%, strength +20%." OrientIQ shows every trade-off visually so you understand and trust every recommendation.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon">✅</div>
+        <div class="feature-icon">
+          <img src="assets/icons/failure-reduction.svg" alt="Failure reduction icon" />
+        </div>
         <h3>Fewer Failed Prints</h3>
         <p>Bad orientation is a leading cause of print failures. OrientIQ catches risky orientations before they reach the printer — saving filament, time, and frustration.</p>
       </div>
@@ -717,17 +790,23 @@
     <h2 class="section-title">Three steps. No software to install.</h2>
     <div style="display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;">
       <div style="flex:1;min-width:180px;padding:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
-        <div style="font-size:2rem;margin-bottom:0.75rem;">📤</div>
+        <div class="step-icon">
+          <img src="assets/icons/step-upload.svg" alt="Upload step icon" />
+        </div>
         <div style="font-weight:700;color:#fff;margin-bottom:0.5rem;">1. Upload</div>
         <div style="font-size:0.875rem;color:var(--muted);">Drop one or dozens of STL/3MF files — OrientIQ handles batches</div>
       </div>
       <div style="flex:1;min-width:180px;padding:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
-        <div style="font-size:2rem;margin-bottom:0.75rem;">⚙️</div>
+        <div class="step-icon">
+          <img src="assets/icons/step-optimize.svg" alt="Optimize step icon" />
+        </div>
         <div style="font-weight:700;color:#fff;margin-bottom:0.5rem;">2. Optimize</div>
         <div style="font-size:0.875rem;color:var(--muted);">OrientIQ orients each model, minimizes supports, and packs everything across multiple plates</div>
       </div>
       <div style="flex:1;min-width:180px;padding:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
-        <div style="font-size:2rem;margin-bottom:0.75rem;">📥</div>
+        <div class="step-icon">
+          <img src="assets/icons/step-download.svg" alt="Download step icon" />
+        </div>
         <div style="font-weight:700;color:#fff;margin-bottom:0.5rem;">3. Download</div>
         <div style="font-size:0.875rem;color:var(--muted);">Get your plates as ready-to-slice files — one per build plate, nothing to configure</div>
       </div>
@@ -800,8 +879,10 @@
       <p class="modal-tier" id="modalTier"></p>
       <form class="waitlist-form" onsubmit="handlePricingSubmit(event)">
         <input type="email" placeholder="your@email.com" required />
+        <input class="hp-field" type="text" name="company" tabindex="-1" autocomplete="off" />
         <button type="submit">Get Early Access</button>
       </form>
+      <p class="form-status" id="pricingStatus"></p>
     </div>
   </div>
 
@@ -840,8 +921,10 @@
     <p>We analyzed 4,400+ data points across GitHub, Reddit, and YouTube to understand exactly what print farm operators struggle with. OrientIQ is built to solve those problems. Join the waitlist to shape what we build — and get early access.</p>
     <form class="waitlist-form" style="justify-content:center" onsubmit="handleSubmit(event)">
       <input type="email" placeholder="your@email.com" required />
+      <input class="hp-field" type="text" name="company" tabindex="-1" autocomplete="off" />
       <button type="submit">Join Waitlist</button>
     </form>
+    <p class="form-status" data-role="waitlist-status"></p>
     <p class="form-note" style="margin-top:0.75rem">No spam. Early access when we launch.</p>
   </section>
 
@@ -851,55 +934,152 @@
   </footer>
 
   <script>
-    // UTM referral tracking
+    // Configure this after deploying your Google Apps Script web app.
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHk1iuqKn3YNag9WwftzcY9yCNBdD3f1LI4pUKIY5eKFCHMoxKwdZokL8J-EU80zA-/exec';
     const ref = new URLSearchParams(window.location.search).get('ref') || '(direct)';
+    const RATE_BUCKET_MS = 60 * 1000;
+    let selectedTier = '';
 
-    // Waitlist form handler
-    function handleSubmit(e) {
+    function getAnonId() {
+      const key = 'orientiq_anon_id_v1';
+      let id = localStorage.getItem(key);
+      if (!id) {
+        id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem(key, id);
+      }
+      return id;
+    }
+
+    function makeClientKey(eventType, email) {
+      const bucket = Math.floor(Date.now() / RATE_BUCKET_MS);
+      const normalizedEmail = (email || '').trim().toLowerCase();
+      return `${eventType}:${getAnonId()}:${normalizedEmail}:${bucket}`;
+    }
+
+    function showStatus(el, message, type) {
+      if (!el) return;
+      el.textContent = message;
+      el.className = `form-status ${type}`;
+      el.style.display = 'block';
+    }
+
+    function setLoading(form, isLoading) {
+      form.querySelectorAll('button').forEach(btn => {
+        if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
+        btn.disabled = isLoading;
+        if (isLoading && btn.type === 'submit') btn.textContent = 'Sending...';
+        if (!isLoading) btn.textContent = btn.dataset.originalText;
+      });
+    }
+
+    async function postEvent(payload) {
+      if (!APPS_SCRIPT_URL) throw new Error('Missing APPS_SCRIPT_URL');
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({ ok: true }));
+      if (!data.ok) throw new Error(data.error || 'Unknown error');
+      return data;
+    }
+
+    async function handleSubmit(e) {
       e.preventDefault();
-      const email = e.target.querySelector('input[type="email"]').value;
-      console.log('Waitlist signup:', { email, ref });
-      window._signupEmail = email;
+      const form = e.target;
+      const status = form.parentElement.querySelector('[data-role="waitlist-status"]');
+      const email = form.querySelector('input[type="email"]').value.trim();
+      const hp = form.querySelector('input[name="company"]')?.value || '';
 
-      // Hide form and form note
-      e.target.style.display = 'none';
-      const note = e.target.parentElement.querySelector('.form-note');
-      if (note) note.style.display = 'none';
+      if (!email) return;
+      setLoading(form, true);
+      showStatus(status, '', 'success');
+      status && (status.style.display = 'none');
 
-      // Show survey (hero form) or simple confirmation (bottom form)
-      const survey = e.target.parentElement.querySelector('.survey');
-      if (survey) {
-        survey.style.display = 'block';
-      } else {
-        e.target.insertAdjacentHTML('afterend', '<p style="color:var(--success);font-weight:600;">You\'re on the list!</p>');
+      try {
+        await postEvent({
+          event_type: 'waitlist',
+          email,
+          ref,
+          submitted_at: new Date().toISOString(),
+          client_key: makeClientKey('waitlist', email),
+          hp_field: hp
+        });
+
+        window._signupEmail = email;
+        form.style.display = 'none';
+        const note = form.parentElement.querySelector('.form-note');
+        if (note) note.style.display = 'none';
+
+        const survey = form.parentElement.querySelector('.survey');
+        if (survey) {
+          survey.style.display = 'block';
+        } else {
+          showStatus(status, "You're on the list!", 'success');
+        }
+      } catch (err) {
+        showStatus(status, 'Could not submit right now. Please try again.', 'error');
+        console.error(err);
+      } finally {
+        setLoading(form, false);
       }
     }
 
-    // Survey helpers
     function selectOption(btn) {
       btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
     }
 
-    function submitSurvey() {
+    async function submitSurvey() {
+      const status = document.getElementById('surveyStatus');
       const answers = {};
       document.querySelectorAll('.survey-options').forEach(group => {
         const selected = group.querySelector('.selected');
-        answers[group.dataset.question] = selected ? selected.textContent : null;
+        answers[group.dataset.question] = selected ? selected.textContent : '';
       });
-      console.log('Survey response:', { email: window._signupEmail, ref, ...answers });
-      document.querySelector('.survey-questions').style.display = 'none';
-      document.querySelector('.survey-submit').style.display = 'none';
-      document.getElementById('surveyThanks').style.display = 'block';
-    }
 
-    // Pricing fake door
-    let selectedTier = '';
+      if (!window._signupEmail) {
+        showStatus(status, 'Join the waitlist first.', 'error');
+        return;
+      }
+      if (!answers.printers || !answers.bottleneck || !answers.pricing) {
+        showStatus(status, 'Please answer all 3 questions.', 'error');
+        return;
+      }
+
+      const btn = document.querySelector('.survey-submit');
+      const hp = document.getElementById('survey-hp')?.value || '';
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      status.style.display = 'none';
+
+      try {
+        await postEvent({
+          event_type: 'survey',
+          email: window._signupEmail,
+          ref,
+          answers,
+          submitted_at: new Date().toISOString(),
+          client_key: makeClientKey('survey', window._signupEmail),
+          hp_field: hp
+        });
+        document.querySelector('.survey-questions').style.display = 'none';
+        btn.style.display = 'none';
+        document.getElementById('surveyThanks').style.display = 'block';
+      } catch (err) {
+        showStatus(status, 'Could not submit right now. Please try again.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Submit';
+        console.error(err);
+      }
+    }
 
     function handlePricingClick(tier) {
       selectedTier = tier;
-      console.log('Pricing intent:', { tier, ref });
       document.getElementById('modalTier').textContent = 'Selected plan: ' + tier;
+      document.getElementById('pricingStatus').style.display = 'none';
       document.getElementById('pricingModal').classList.add('active');
     }
 
@@ -907,15 +1087,37 @@
       document.getElementById('pricingModal').classList.remove('active');
     }
 
-    function handlePricingSubmit(e) {
+    async function handlePricingSubmit(e) {
       e.preventDefault();
-      const email = e.target.querySelector('input[type="email"]').value;
-      console.log('Pricing signup:', { email, tier: selectedTier, ref });
-      closePricingModal();
-      document.getElementById('waitlist').scrollIntoView({ behavior: 'smooth' });
+      const form = e.target;
+      const email = form.querySelector('input[type="email"]').value.trim();
+      const hp = form.querySelector('input[name="company"]')?.value || '';
+      const status = document.getElementById('pricingStatus');
+
+      if (!email) return;
+      setLoading(form, true);
+      status.style.display = 'none';
+
+      try {
+        await postEvent({
+          event_type: 'pricing_intent',
+          email,
+          tier: selectedTier || 'unknown',
+          ref,
+          submitted_at: new Date().toISOString(),
+          client_key: makeClientKey('pricing_intent', email),
+          hp_field: hp
+        });
+        closePricingModal();
+        document.getElementById('waitlist').scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        showStatus(status, 'Could not submit right now. Please try again.', 'error');
+        console.error(err);
+      } finally {
+        setLoading(form, false);
+      }
     }
 
-    // Close modal on overlay click or Escape
     document.getElementById('pricingModal').addEventListener('click', function(e) {
       if (e.target === this) closePricingModal();
     });
@@ -923,7 +1125,6 @@
       if (e.key === 'Escape') closePricingModal();
     });
 
-    // Smooth scroll
     document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => {
         e.preventDefault();
