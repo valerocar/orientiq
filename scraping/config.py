@@ -28,6 +28,13 @@ REDDIT_QUERIES = [
     "surface finish orientation",
     "bridge orientation",
     "print failure orientation",
+    "split model too large",
+    "cut model build volume",
+    "oversized print split",
+    "glue 3d print pieces",
+    "split STL",
+    "model too big for printer",
+    "exceeds build volume",
 ]
 
 REDDIT_POSTS_PER_QUERY = 100
@@ -49,6 +56,11 @@ GITHUB_SEARCH_TERMS = [
     '"bed packing"',
     '"model placement"',
     '"overhang angle"',
+    '"split model"',
+    '"cut tool"',
+    '"exceeds build volume"',
+    '"too large"',
+    '"oversized"',
 ]
 
 GITHUB_LABELS = [
@@ -68,6 +80,9 @@ YOUTUBE_QUERIES = [
     "3d print nesting",
     "slicer auto arrange",
     "print farm day in the life",
+    "split 3d print model too large",
+    "cut STL oversized printer",
+    "3d print large model split glue",
 ]
 
 YOUTUBE_PRIORITY_CHANNELS = [

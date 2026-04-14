@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from orient_opt.critical_points import find_critical_points
 from orient_opt.gradients import build_height_gradient, overhang_smooth_gradient
 from orient_opt.objectives import build_height, overhang, overhang_smooth, support_volume, surface_quality, stability
-from orient_opt.optimizer import coarse_then_refine
 from orient_opt.sampling import fibonacci_sphere
 from orient_opt.hopf import sphere_to_quaternion, quaternion_to_rotation_matrix
 from orient_opt.pareto import non_dominated_front_2obj
@@ -76,19 +75,25 @@ def _prepare_mesh(mesh, max_faces):
 
 
 def _overhang_analysis(verts, faces, normals, angle=45.0):
-    """Compute overhang indices and support pillar centroids."""
+    """Compute overhang indices, support pillar centroids, and per-pillar areas."""
     g = np.array([0.0, 0.0, 1.0], dtype=np.float32)
     threshold = -np.cos(np.radians(angle))
     dots = normals @ g
     oh_mask = dots < threshold
     oh_indices = np.where(oh_mask)[0].astype(np.int32)
-    centroids = verts[faces[oh_mask]].mean(axis=1).astype(np.float32)
+    oh_faces = faces[oh_mask]
+    centroids = verts[oh_faces].mean(axis=1).astype(np.float32)
+    # Compute per-face areas for overhang faces
+    v0 = verts[oh_faces[:, 0]]
+    v1 = verts[oh_faces[:, 1]]
+    v2 = verts[oh_faces[:, 2]]
+    pillar_areas = (0.5 * np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1)).astype(np.float32)
     z_min = float(verts[:, 2].min())
-    return oh_indices, centroids, z_min
+    return oh_indices, centroids, z_min, pillar_areas
 
 
 def _pack_mesh_binary(verts, faces, normals, oh_indices, pillar_centroids, z_min,
-                      n_faces_original=0, extra_floats=None):
+                      n_faces_original=0, extra_floats=None, pillar_areas=None):
     """Pack mesh data into a binary buffer.
 
     Layout:
@@ -100,6 +105,7 @@ def _pack_mesh_binary(verts, faces, normals, oh_indices, pillar_centroids, z_min
       normals:            n_faces * 3 float32
       oh_indices:         n_oh int32
       pillar_centroids:   n_pillars * 3 float32
+      pillar_areas:       n_pillars float32
     """
     buf = io.BytesIO()
     n_verts = len(verts)
@@ -124,6 +130,7 @@ def _pack_mesh_binary(verts, faces, normals, oh_indices, pillar_centroids, z_min
     buf.write(oh_indices.astype(np.int32).tobytes())
     if n_pillars > 0:
         buf.write(pillar_centroids.astype(np.float32).tobytes())
+        buf.write(pillar_areas.astype(np.float32).tobytes())
 
     return buf.getvalue()
 
@@ -144,11 +151,12 @@ def get_mesh(model_name: str):
         raise HTTPException(404, f"Model '{model_name}' not found")
 
     verts, faces, normals = render_cache[model_name]
-    oh_indices, pillar_centroids, z_min = _overhang_analysis(verts, faces, normals)
+    oh_indices, pillar_centroids, z_min, pillar_areas = _overhang_analysis(verts, faces, normals)
 
     data = _pack_mesh_binary(
         verts, faces, normals, oh_indices, pillar_centroids, z_min,
         n_faces_original=len(model_cache[model_name].faces),
+        pillar_areas=pillar_areas,
     )
     return Response(content=data, media_type="application/octet-stream")
 
@@ -180,13 +188,12 @@ def optimize(req: OptimizeRequest):
     g_z = np.array([[0.0, 0.0, 1.0]])
 
     if req.objective == "overhang":
-        result = coarse_then_refine(
-            normals=on, areas=opt_areas, vertices=ov,
-            lam=1.0, n_samples=N_SAMPLES_SINGLE,
-        )
-        best_g = result.gravity_direction
+        candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
+        oh = overhang(on, opt_areas, candidates)
+        best_idx = np.argmin(oh)
+        best_g = candidates[best_idx]
         orig_val = float(overhang(on, opt_areas, g_z)[0])
-        opt_val = float(overhang(on, opt_areas, best_g.reshape(1, 3))[0])
+        opt_val = float(oh[best_idx])
 
     elif req.objective == "support_volume":
         candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
@@ -214,13 +221,12 @@ def optimize(req: OptimizeRequest):
         opt_val = float(stab[best_idx])
 
     else:  # build_height
-        result = coarse_then_refine(
-            normals=on, areas=opt_areas, vertices=ov,
-            lam=0.0, n_samples=N_SAMPLES_SINGLE,
-        )
-        best_g = result.gravity_direction
+        candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
+        bh = build_height(ov, candidates)
+        best_idx = np.argmin(bh)
+        best_g = candidates[best_idx]
         orig_val = float(build_height(ov, g_z)[0])
-        opt_val = float(build_height(ov, best_g.reshape(1, 3))[0])
+        opt_val = float(bh[best_idx])
 
     # Rotate render mesh
     q = sphere_to_quaternion(best_g)
@@ -236,7 +242,7 @@ def optimize(req: OptimizeRequest):
     if scale > 0:
         rot_verts = rot_verts / scale
 
-    oh_indices, pillar_centroids, z_min = _overhang_analysis(
+    oh_indices, pillar_centroids, z_min, pillar_areas = _overhang_analysis(
         rot_verts, rf, rot_normals
     )
 
@@ -244,6 +250,7 @@ def optimize(req: OptimizeRequest):
         rot_verts, rf, rot_normals, oh_indices, pillar_centroids, z_min,
         n_faces_original=len(mesh.faces),
         extra_floats=[orig_val, opt_val],
+        pillar_areas=pillar_areas,
     )
     return Response(content=data, media_type="application/octet-stream")
 
@@ -390,11 +397,12 @@ def rotate(req: RotateRequest):
     if scale > 0:
         rot_verts = rot_verts / scale
 
-    oh_indices, pillar_centroids, z_min = _overhang_analysis(rot_verts, rf, rot_normals)
+    oh_indices, pillar_centroids, z_min, pillar_areas = _overhang_analysis(rot_verts, rf, rot_normals)
 
     data = _pack_mesh_binary(
         rot_verts, rf, rot_normals, oh_indices, pillar_centroids, z_min,
         n_faces_original=len(model_cache[req.model_name].faces),
+        pillar_areas=pillar_areas,
     )
     return Response(content=data, media_type="application/octet-stream")
 
@@ -419,7 +427,7 @@ def critical_points(req: CriticalPointsRequest):
     _, _, _, on, ov, of, opt_areas = _get_mesh_data(req.model_name)
     lam = float(np.clip(req.lam, 0.0, 1.0))
 
-    # Build objective/gradient callables consistent with coarse_then_refine
+    # Build normalized objective/gradient callables for critical point search
     oh_vals = overhang(on, opt_areas, fibonacci_sphere(200), angle=req.overhang_angle)
     bh_vals = build_height(ov, fibonacci_sphere(200))
     oh_min, oh_max = float(oh_vals.min()), float(oh_vals.max())

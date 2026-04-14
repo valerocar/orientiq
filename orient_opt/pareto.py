@@ -5,7 +5,7 @@ from itertools import combinations
 import numpy as np
 from scipy.spatial import cKDTree
 
-from .objectives import build_height, overhang, overhang_smooth, surface_quality, violation
+from .objectives import build_height, overhang, surface_quality
 from .optimizer import coarse_then_refine
 from .types import OrientationResult
 
@@ -69,19 +69,6 @@ def _non_dominated_sort_naive(objectives: np.ndarray) -> list[np.ndarray]:
         fronts.append(np.array(front))
         remaining -= set(front)
     return fronts
-
-
-_OBJECTIVE_REGISTRY = {
-    "overhang": lambda normals, areas, vertices, candidates, **kw: overhang(
-        normals, areas, candidates, angle=kw.get("overhang_angle", 45.0)
-    ),
-    "build_height": lambda normals, areas, vertices, candidates, **kw: build_height(
-        vertices, candidates
-    ),
-    "surface_quality": lambda normals, areas, vertices, candidates, **kw: surface_quality(
-        normals, areas, candidates, kw["critical_faces"]
-    ),
-}
 
 
 def pareto_front(
