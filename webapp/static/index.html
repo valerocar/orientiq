@@ -24,6 +24,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 .mode-group, .pair-group { display: flex; gap: 6px; align-items: center; }
 .pair-group label { font-size: 11px; color: #888; }
 .hidden { display: none !important; }
+.obj-group { position: relative; display: flex; align-items: center; gap: 4px; }
+.obj-info { color: #666; font-size: 13px; cursor: help; line-height: 1; user-select: none; }
+.obj-info:hover { color: #aaa; }
+.obj-info-tip {
+    display: none; position: absolute; top: calc(100% + 6px); right: 0;
+    background: rgba(0,0,0,0.92); color: #ccc; padding: 7px 10px;
+    border-radius: 5px; font-size: 11px; line-height: 1.4; white-space: normal;
+    width: 220px; z-index: 100; border: 1px solid #0f3460; pointer-events: none;
+}
+.obj-info:hover .obj-info-tip { display: block; }
 
 .panels { display: flex; flex: 1; }
 .panel { flex: 1; position: relative; border-right: 1px solid #0f3460; }
@@ -72,16 +82,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
         <span class="model-faces" id="model-faces"></span>
     </div>
     <!-- Single mode controls -->
-    <select id="objective-select">
-        <option value="support_volume">Support Volume</option>
-        <option value="overhang">Overhang Area</option>
-        <option value="build_height">Build Height</option>
-        <option value="surface_quality">Surface Quality</option>
-        <option value="stability">Stability</option>
-    </select>
-    <label id="height-label" style="margin-left:8px;color:#aaa;font-size:12px">
-        Max H: <input type="range" id="height-slider" min="0" max="1" step="0.001" value="1" style="width:100px;vertical-align:middle">
-        <span id="height-value"></span>
+    <div class="obj-group" id="obj-group">
+        <select id="objective-select">
+            <option value="support_volume">Support Volume</option>
+            <option value="overhang">Overhang Area</option>
+            <option value="build_height">Build Height</option>
+            <option value="surface_quality">Surface Quality</option>
+        </select>
+        <span class="obj-info">&#9432;<span class="obj-info-tip" id="obj-info-tip"></span></span>
+    </div>
+    <label id="stability-label" style="margin-left:8px;color:#aaa;font-size:12px">
+        Min Stability: <input type="range" id="stability-slider" min="0" max="100" step="1" value="0" style="width:100px;vertical-align:middle">
+        <span id="stability-value">0%</span>
     </label>
     <!-- Pair mode controls -->
     <div class="pair-group hidden" id="pair-controls">
@@ -91,7 +103,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
             <option value="support_volume">Sup. Volume</option>
             <option value="build_height">Height</option>
             <option value="surface_quality">Surf. Quality</option>
-            <option value="stability">Stability</option>
         </select>
         <label>B:</label>
         <select id="obj-b">
@@ -99,7 +110,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
             <option value="overhang">Overhang</option>
             <option value="support_volume">Sup. Volume</option>
             <option value="surface_quality">Surf. Quality</option>
-            <option value="stability">Stability</option>
         </select>
     </div>
 </div>
@@ -140,7 +150,7 @@ function parseMeshBinary(buffer) {
     const f32 = () => { const v = view.getFloat32(off, true); off += 4; return v; };
 
     const nVerts = u32(), nFaces = u32(), nOh = u32(), nPillars = u32();
-    const nFacesOrig = u32(), extraCount = u32(); u32();
+    const nFacesOrig = u32(), extraCount = u32(), nCandidates = u32();
     const extra = []; for (let i = 0; i < extraCount; i++) extra.push(f32());
     const zMin = f32();
     const vertices = new Float32Array(buffer, off, nVerts * 3); off += nVerts * 12;
@@ -150,7 +160,15 @@ function parseMeshBinary(buffer) {
     const pillarCentroids = nPillars > 0 ? new Float32Array(buffer, off, nPillars * 3) : new Float32Array(0);
     if (nPillars > 0) off += nPillars * 12;
     const pillarAreas = nPillars > 0 ? new Float32Array(buffer, off, nPillars) : new Float32Array(0);
-    return { nVerts, nFaces, nFacesOrig, vertices, faces, normals, ohIndices, pillarCentroids, pillarAreas, zMin, extra };
+    if (nPillars > 0) off += nPillars * 4;
+    let candidateGravities = null, candidateObjValues = null, candidateStabValues = null;
+    if (nCandidates > 0) {
+        candidateGravities  = new Float32Array(buffer, off, nCandidates * 3); off += nCandidates * 12;
+        candidateObjValues  = new Float32Array(buffer, off, nCandidates);      off += nCandidates * 4;
+        candidateStabValues = new Float32Array(buffer, off, nCandidates);      off += nCandidates * 4;
+    }
+    return { nVerts, nFaces, nFacesOrig, vertices, faces, normals, ohIndices, pillarCentroids, pillarAreas, zMin, extra,
+             nCandidates, candidateGravities, candidateObjValues, candidateStabValues };
 }
 
 function parseParetoBinary(buffer) {
@@ -166,11 +184,23 @@ function parseParetoBinary(buffer) {
     return { nCand, nPareto, nFaces, nFacesOrig, gravities, objValues, paretoIdx, faceFlags };
 }
 
+// ---- Objective descriptions ----
+const OBJ_DESCRIPTIONS = {
+    support_volume:  'Total volume of support material needed below overhanging faces.',
+    overhang:        'Total area of faces steeper than 45° from vertical.',
+    build_height:    'Distance from the lowest to the highest point along the build direction.',
+    surface_quality: 'Penalty for faces nearly parallel or perpendicular to the build direction.',
+};
+function updateObjTooltip() {
+    const obj = document.getElementById('objective-select').value;
+    document.getElementById('obj-info-tip').textContent = OBJ_DESCRIPTIONS[obj] || '';
+}
+
 // ---- Objective sphere overlay ----
-const N_FIB = 500; // Fibonacci sphere sample count
 let overlayState = null;
-let cachedLeftMeshData = null; // {nFaces, nVerts, normals, vertices, areas, centroids}
-let cachedLeftParsed = null; // raw parseMeshBinary result for left panel rebuilds
+let cachedLeftParsed = null;    // raw parseMeshBinary result for left panel rebuilds
+let cachedCandidateData = null; // {nCandidates, candidateGravities, candidateObjValues, candidateStabValues}
+let stabMin = 0;                // most negative stability value across candidates
 
 function viridis(t) {
     t = Math.max(0, Math.min(1, t));
@@ -192,67 +222,6 @@ function viridis(t) {
     ];
 }
 
-function prepareMeshArrays(d) {
-    const nF = d.nFaces, nV = d.nVerts;
-    const areas = new Float32Array(nF);
-    const centroids = new Float32Array(nF * 3);
-    for (let f = 0; f < nF; f++) {
-        const i0 = d.faces[f*3], i1 = d.faces[f*3+1], i2 = d.faces[f*3+2];
-        const ax = d.vertices[i1*3]-d.vertices[i0*3], ay = d.vertices[i1*3+1]-d.vertices[i0*3+1], az = d.vertices[i1*3+2]-d.vertices[i0*3+2];
-        const bx = d.vertices[i2*3]-d.vertices[i0*3], by = d.vertices[i2*3+1]-d.vertices[i0*3+1], bz = d.vertices[i2*3+2]-d.vertices[i0*3+2];
-        const cx = ay*bz-az*by, cy = az*bx-ax*bz, cz = ax*by-ay*bx;
-        areas[f] = 0.5 * Math.sqrt(cx*cx + cy*cy + cz*cz);
-        centroids[f*3]   = (d.vertices[i0*3]   + d.vertices[i1*3]   + d.vertices[i2*3])   / 3;
-        centroids[f*3+1] = (d.vertices[i0*3+1] + d.vertices[i1*3+1] + d.vertices[i2*3+1]) / 3;
-        centroids[f*3+2] = (d.vertices[i0*3+2] + d.vertices[i1*3+2] + d.vertices[i2*3+2]) / 3;
-    }
-    return { nFaces: nF, nVerts: nV, normals: d.normals, vertices: d.vertices, faces: d.faces, areas, centroids };
-}
-
-function evalObjective(obj, gx, gy, gz, m) {
-    const thresh = -Math.cos(45 * Math.PI / 180);
-    if (obj === 'overhang') {
-        let s = 0;
-        for (let f = 0; f < m.nFaces; f++) {
-            if (gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2] < thresh) s += m.areas[f];
-        }
-        return s;
-    }
-    if (obj === 'build_height') {
-        let lo = Infinity, hi = -Infinity;
-        for (let v = 0; v < m.nVerts; v++) {
-            const p = gx*m.vertices[v*3] + gy*m.vertices[v*3+1] + gz*m.vertices[v*3+2];
-            if (p < lo) lo = p; if (p > hi) hi = p;
-        }
-        return hi - lo;
-    }
-    if (obj === 'support_volume') {
-        let lo = Infinity;
-        for (let v = 0; v < m.nVerts; v++) {
-            const p = gx*m.vertices[v*3] + gy*m.vertices[v*3+1] + gz*m.vertices[v*3+2];
-            if (p < lo) lo = p;
-        }
-        let s = 0;
-        for (let f = 0; f < m.nFaces; f++) {
-            if (gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2] < thresh) {
-                const ch = gx*m.centroids[f*3] + gy*m.centroids[f*3+1] + gz*m.centroids[f*3+2] - lo;
-                s += m.areas[f] * ch;
-            }
-        }
-        return s;
-    }
-    if (obj === 'surface_quality') {
-        let s = 0;
-        for (let f = 0; f < m.nFaces; f++) {
-            const dot = gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2];
-            const p = 1 - Math.abs(dot);
-            s += p * p * m.areas[f];
-        }
-        return s;
-    }
-    // stability fallback: use build height as proxy
-    return evalObjective('build_height', gx, gy, gz, m);
-}
 
 function initOverlay() {
     const container = document.getElementById('sphere-overlay');
@@ -313,11 +282,10 @@ function initOverlay() {
             body: JSON.stringify({ model_name: name, gravity: [gx, gy, gz] }),
         })).arrayBuffer();
         const d = parseMeshBinary(buf);
-        // Evaluate objective at this direction
         const objective = document.getElementById('objective-select').value;
         showMesh('panel-right', d, objective);
-        const val = evalObjective(objective, gx, gy, gz, cachedLeftMeshData);
-        const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+        const val = overlayState.group.userData.fibValues[hits[0].index];
+        const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual' };
         document.getElementById('label-right').innerHTML =
             `${pretty[objective]}: <span class="value">${val.toFixed(2)}</span><br><span style="font-size:10px">g=[${gx.toFixed(2)}, ${gy.toFixed(2)}, ${gz.toFixed(2)}]</span>`;
         document.getElementById('loading-right').style.display = 'none';
@@ -383,128 +351,84 @@ function clearOverlay() {
     }
 }
 
-function fibonacciSphere(n) {
-    const golden = (1 + Math.sqrt(5)) / 2;
-    const pts = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-        const nz = 1 - 2 * i / (n - 1);
-        const phi = 2 * Math.PI * i / (golden * golden);
-        const r = Math.sqrt(Math.max(1 - nz * nz, 0));
-        pts[i*3] = r * Math.cos(phi);
-        pts[i*3+1] = r * Math.sin(phi);
-        pts[i*3+2] = nz;
+// Pack feasible candidates first, use setDrawRange to hide the rest.
+// positions/colors/fibValues are full-size (nCandidates) but only [0, nFeasible) is rendered.
+function _packFeasible(candidateData, stabPct, positions, colors, fibValues) {
+    const { nCandidates, candidateGravities, candidateObjValues, candidateStabValues } = candidateData;
+    const threshold = (stabPct / 100) * stabMin;
+
+    let vMin = Infinity, vMax = -Infinity;
+    for (let i = 0; i < nCandidates; i++) {
+        if (candidateStabValues[i] <= threshold) {
+            if (candidateObjValues[i] < vMin) vMin = candidateObjValues[i];
+            if (candidateObjValues[i] > vMax) vMax = candidateObjValues[i];
+        }
     }
-    return pts;
+    if (vMin === Infinity) { vMin = 0; vMax = 1; }
+    const range = vMax - vMin || 1;
+
+    let w = 0, bestW = -1, bestVal = Infinity;
+    for (let i = 0; i < nCandidates; i++) {
+        if (candidateStabValues[i] <= threshold) {
+            positions[w*3]   = candidateGravities[i*3];
+            positions[w*3+1] = candidateGravities[i*3+1];
+            positions[w*3+2] = candidateGravities[i*3+2];
+            fibValues[w] = candidateObjValues[i];
+            const t = (candidateObjValues[i] - vMin) / range;
+            const [r, g, b] = viridis(t);
+            colors[w*3] = r; colors[w*3+1] = g; colors[w*3+2] = b;
+            if (candidateObjValues[i] < bestVal) { bestVal = candidateObjValues[i]; bestW = w; }
+            w++;
+        }
+    }
+
+    // No feasible → show only the most stable candidate
+    if (w === 0) {
+        let msIdx = 0;
+        for (let i = 1; i < nCandidates; i++) {
+            if (candidateStabValues[i] < candidateStabValues[msIdx]) msIdx = i;
+        }
+        positions[0] = candidateGravities[msIdx*3];
+        positions[1] = candidateGravities[msIdx*3+1];
+        positions[2] = candidateGravities[msIdx*3+2];
+        fibValues[0] = candidateObjValues[msIdx];
+        colors[0] = 1; colors[1] = 0.6; colors[2] = 0; // orange = fallback
+        w = 1; bestW = 0;
+    }
+    return { nFeasible: w, bestW };
 }
 
-function buildObjectiveSphere(meshData, objective) {
-    const group = new THREE.Group();
-    const pts = fibonacciSphere(N_FIB);
+function buildObjectiveSphere(candidateData, stabPct) {
+    const { nCandidates, candidateStabValues } = candidateData;
 
-    // Evaluate objective and build height at each point (combined to avoid redundant loops)
-    const values = new Float32Array(N_FIB);
-    const heights = new Float32Array(N_FIB);
-    let vMin = Infinity, vMax = -Infinity, bestIdx = 0;
-    let hMin = Infinity, hMax = -Infinity;
-    const m = meshData;
-    const thresh = -Math.cos(45 * Math.PI / 180);
-    for (let i = 0; i < N_FIB; i++) {
-        const gx = pts[i*3], gy = pts[i*3+1], gz = pts[i*3+2];
-        // Single pass over vertices: compute lo/hi for build_height (needed by all paths)
-        let lo = Infinity, hi = -Infinity;
-        for (let v = 0; v < m.nVerts; v++) {
-            const p = gx*m.vertices[v*3] + gy*m.vertices[v*3+1] + gz*m.vertices[v*3+2];
-            if (p < lo) lo = p;
-            if (p > hi) hi = p;
-        }
-        const h = hi - lo;
-        heights[i] = h;
-        // Compute selected objective (reusing lo from above for support_volume)
-        let val;
-        if (objective === 'build_height' || objective === 'stability') {
-            val = h;
-        } else if (objective === 'overhang') {
-            let s = 0;
-            for (let f = 0; f < m.nFaces; f++) {
-                if (gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2] < thresh)
-                    s += m.areas[f];
-            }
-            val = s;
-        } else if (objective === 'support_volume') {
-            let s = 0;
-            for (let f = 0; f < m.nFaces; f++) {
-                if (gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2] < thresh) {
-                    const ch = gx*m.centroids[f*3] + gy*m.centroids[f*3+1] + gz*m.centroids[f*3+2] - lo;
-                    s += m.areas[f] * ch;
-                }
-            }
-            val = s;
-        } else { // surface_quality
-            let s = 0;
-            for (let f = 0; f < m.nFaces; f++) {
-                const dot = gx*m.normals[f*3] + gy*m.normals[f*3+1] + gz*m.normals[f*3+2];
-                const p = 1 - Math.abs(dot);
-                s += p * p * m.areas[f];
-            }
-            val = s;
-        }
-        values[i] = val;
-        if (val < vMin) { vMin = val; bestIdx = i; }
-        if (val > vMax) vMax = val;
-        if (h < hMin) hMin = h;
-        if (h > hMax) hMax = h;
+    // Compute stabMin once on first build
+    let sMin = 0;
+    for (let i = 0; i < nCandidates; i++) {
+        if (candidateStabValues[i] < sMin) sMin = candidateStabValues[i];
     }
+    stabMin = sMin;
 
-    // Sort indices by height (ascending) so drawRange can filter by height cap
-    const sortedIdx = Array.from({length: N_FIB}, (_, i) => i);
-    sortedIdx.sort((a, b) => heights[a] - heights[b]);
-
-    // Build sorted arrays
-    const range = vMax - vMin || 1;
-    const positions = new Float32Array(N_FIB * 3);
-    const colors = new Float32Array(N_FIB * 3);
-    const sortedValues = new Float32Array(N_FIB);
-    const sortedHeights = new Float32Array(N_FIB);
-    const sortedPts = new Float32Array(N_FIB * 3);
-    for (let j = 0; j < N_FIB; j++) {
-        const i = sortedIdx[j];
-        sortedPts[j*3] = pts[i*3];
-        sortedPts[j*3+1] = pts[i*3+1];
-        sortedPts[j*3+2] = pts[i*3+2];
-        positions[j*3] = pts[i*3];
-        positions[j*3+1] = pts[i*3+1];
-        positions[j*3+2] = pts[i*3+2];
-        sortedValues[j] = values[i];
-        sortedHeights[j] = heights[i];
-        const t = (values[i] - vMin) / range;
-        const [r, g, b] = viridis(t);
-        colors[j*3] = r; colors[j*3+1] = g; colors[j*3+2] = b;
-    }
-
-    // Find bestIdx in sorted order
-    let sortedBestIdx = 0;
-    for (let j = 0; j < N_FIB; j++) {
-        if (sortedIdx[j] === bestIdx) { sortedBestIdx = j; break; }
-    }
+    const positions = new Float32Array(nCandidates * 3);
+    const colors    = new Float32Array(nCandidates * 3);
+    const fibValues = new Float32Array(nCandidates);
+    const { nFeasible, bestW } = _packFeasible(candidateData, stabPct, positions, colors, fibValues);
 
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geom.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
+    geom.setDrawRange(0, nFeasible);
 
-    const points = new THREE.Points(geom, new THREE.PointsMaterial({
+    const pts = new THREE.Points(geom, new THREE.PointsMaterial({
         size: 0.06, vertexColors: true, sizeAttenuation: true,
     }));
-    points.name = 'objSphere';
-    group.add(points);
+    pts.name = 'objSphere';
 
-    // Store data for raycasting, height filtering, and best position
-    group.userData.fibPts = sortedPts;
-    group.userData.fibValues = sortedValues;
-    group.userData.fibHeights = sortedHeights;
-    group.userData.hMin = hMin;
-    group.userData.hMax = hMax;
-    group.userData.bestPos = [sortedPts[sortedBestIdx*3]*1.02, sortedPts[sortedBestIdx*3+1]*1.02, sortedPts[sortedBestIdx*3+2]*1.02];
-
+    const group = new THREE.Group();
+    group.add(pts);
+    group.userData.fibPts    = positions;
+    group.userData.fibValues = fibValues;
+    group.userData.bestPos     = [positions[bestW*3]*1.02, positions[bestW*3+1]*1.02, positions[bestW*3+2]*1.02];
+    group.userData.bestGravity = [positions[bestW*3],      positions[bestW*3+1],      positions[bestW*3+2]];
     return group;
 }
 
@@ -521,10 +445,12 @@ function moveMarker(x, y, z) {
     overlayState.scene.add(overlayState.marker);
 }
 
-function updateOverlaySphere(objective) {
-    if (!overlayState || !cachedLeftMeshData) return;
+function updateOverlaySphere() {
+    if (!overlayState || !cachedCandidateData) return;
     clearOverlay();
-    overlayState.group = buildObjectiveSphere(cachedLeftMeshData, objective);
+    const objective = document.getElementById('objective-select').value;
+    const stabPct = parseInt(document.getElementById('stability-slider').value);
+    overlayState.group = buildObjectiveSphere(cachedCandidateData, stabPct);
     overlayState.scene.add(overlayState.group);
     // Place marker at best direction
     const bp = overlayState.group.userData.bestPos;
@@ -532,49 +458,60 @@ function updateOverlaySphere(objective) {
     const el = document.getElementById('sphere-overlay');
     el.style.display = '';
     requestAnimationFrame(() => resizeOverlay());
-    const pretty = { overhang:'Overhang', support_volume:'Sup. Volume', build_height:'Height', surface_quality:'Surf. Quality', stability:'Stability' };
+    const pretty = { overhang:'Overhang', support_volume:'Sup. Volume', build_height:'Height', surface_quality:'Surf. Quality' };
     document.getElementById('sphere-overlay-label').textContent = pretty[objective] || objective;
-
-    // Configure height slider from mesh data
-    const ud = overlayState.group.userData;
-    const slider = document.getElementById('height-slider');
-    const label = document.getElementById('height-label');
-    if (ud.hMin !== undefined) {
-        slider.min = ud.hMin.toFixed(3);
-        slider.max = ud.hMax.toFixed(3);
-        slider.step = ((ud.hMax - ud.hMin) / 500).toFixed(4);
-        slider.value = ud.hMax.toFixed(3);
-        document.getElementById('height-value').textContent = ud.hMax.toFixed(1);
-        label.style.display = '';
-    } else {
-        label.style.display = 'none';
-    }
 }
 
-function applyHeightConstraint() {
-    if (!overlayState || !overlayState.group) return;
-    const ud = overlayState.group.userData;
-    if (!ud.fibHeights) return;
+// Repack existing buffers feasible-first and clip via setDrawRange — no new allocations.
+// Returns [gx, gy, gz] of the new best, or null on error.
+function updateSphereColors(stabPct) {
+    if (!overlayState || !overlayState.group || !cachedCandidateData) return null;
+    const pts = overlayState.group.getObjectByName('objSphere');
+    if (!pts) return null;
 
-    const maxH = parseFloat(document.getElementById('height-slider').value);
-    document.getElementById('height-value').textContent = maxH.toFixed(1);
+    const positions = overlayState.group.userData.fibPts;
+    const fibValues = overlayState.group.userData.fibValues;
+    const colors    = pts.geometry.attributes.color.array;
 
-    // Since points are sorted by height, find how many pass the constraint
-    const heights = ud.fibHeights;
-    let count = heights.length;
-    // Binary search for the cutoff
-    let lo = 0, hi = heights.length;
-    while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (heights[mid] <= maxH) lo = mid + 1;
-        else hi = mid;
-    }
-    count = lo;
+    const { nFeasible, bestW } = _packFeasible(
+        cachedCandidateData, stabPct, positions, colors, fibValues
+    );
 
-    const pointCloud = overlayState.group.getObjectByName('objSphere');
-    if (pointCloud) {
-        pointCloud.geometry.setDrawRange(0, count);
-    }
+    pts.geometry.attributes.position.needsUpdate = true;
+    pts.geometry.attributes.color.needsUpdate    = true;
+    pts.geometry.setDrawRange(0, nFeasible);
+
+    const gx = positions[bestW*3], gy = positions[bestW*3+1], gz = positions[bestW*3+2];
+    overlayState.group.userData.bestGravity = [gx, gy, gz];
+    moveMarker(gx*1.02, gy*1.02, gz*1.02);
+    return [gx, gy, gz];
+}
+
+let stabDebounceTimer = null;
+function applyStabilityConstraint() {
+    if (!cachedCandidateData) return;
+    const stabPct = parseInt(document.getElementById('stability-slider').value);
+    document.getElementById('stability-value').textContent = stabPct + '%';
+
+    const gravity = updateSphereColors(stabPct);
+    if (!gravity) return;
+
+    if (stabDebounceTimer) clearTimeout(stabDebounceTimer);
+    stabDebounceTimer = setTimeout(async () => {
+        const name = models[currentIndex].name;
+        const objective = document.getElementById('objective-select').value;
+        document.getElementById('loading-right').style.display = '';
+        const buf = await (await fetch('/api/rotate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_name: name, gravity }),
+        })).arrayBuffer();
+        const d = parseMeshBinary(buf);
+        showMesh('panel-right', d, objective);
+        const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual' };
+        document.getElementById('label-right').innerHTML =
+            `${pretty[objective]} (stab ≥ ${stabPct}%)`;
+        document.getElementById('loading-right').style.display = 'none';
+    }, 200);
 }
 
 // ---- State ----
@@ -896,6 +833,8 @@ async function loadModel(index) {
 // ---- Single mode ----
 async function loadSingleMode(name) {
     cachedLeftParsed = null;
+    cachedCandidateData = null;
+    clearOverlay();
     clearSphere('panel-right');
     document.getElementById('loading-left').style.display = '';
     const buf = await (await fetch(`/api/mesh/${name}`)).arrayBuffer();
@@ -903,10 +842,8 @@ async function loadSingleMode(name) {
     cachedLeftParsed = d;
     const objective = document.getElementById('objective-select').value;
     showMesh('panel-left', d, objective);
-    cachedLeftMeshData = prepareMeshArrays(d);
     document.getElementById('label-left').innerHTML = `Original<br><span class="value">${d.nFacesOrig.toLocaleString()} faces</span>`;
     document.getElementById('loading-left').style.display = 'none';
-    updateOverlaySphere(objective);
     await runSingleOptimize(name);
 }
 
@@ -924,10 +861,20 @@ async function runSingleOptimize(name) {
     showMesh('panel-right', d, objective);
     const orig = d.extra[0]||0, opt = d.extra[1]||0;
     const pct = orig > 0 ? ((1 - opt/orig) * 100).toFixed(1) : '0.0';
-    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual' };
     document.getElementById('label-right').innerHTML =
         `Optimized (${pretty[objective]})<br><span class="value">${orig.toFixed(1)} &rarr; ${opt.toFixed(1)} (${pct}%)</span>`;
     document.getElementById('loading-right').style.display = 'none';
+    // Cache candidate data from server and rebuild sphere overlay
+    if (d.nCandidates > 0) {
+        cachedCandidateData = {
+            nCandidates:         d.nCandidates,
+            candidateGravities:  d.candidateGravities,
+            candidateObjValues:  d.candidateObjValues,
+            candidateStabValues: d.candidateStabValues,
+        };
+        updateOverlaySphere();
+    }
 }
 
 // ---- Pair mode ----
@@ -960,7 +907,7 @@ async function runParetoAnalysis(name) {
     // Left panel: original mesh with dual-color flags
     const meshData = parseMeshBinary(cachedMeshBuf);
     showMeshWithFlags('panel-left', meshData, paretoData.faceFlags);
-    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual' };
     document.getElementById('label-left').innerHTML =
         `Original &mdash; <span style="color:#dd3333">${pretty[objA]}</span> vs <span style="color:#3366ee">${pretty[objB]}</span>`;
 
@@ -1011,7 +958,7 @@ document.getElementById('panel-right').addEventListener('click', async (e) => {
     // Update label with objective values
     const vA = paretoData.objValues[origIdx*2].toFixed(1);
     const vB = paretoData.objValues[origIdx*2+1].toFixed(1);
-    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual', stability:'Stability' };
+    const pretty = { overhang:'Overhang', support_volume:'Sup.Vol', build_height:'Height', surface_quality:'Surf.Qual' };
     const objA = document.getElementById('obj-a').value;
     const objB = document.getElementById('obj-b').value;
     document.getElementById('label-left').innerHTML =
@@ -1023,8 +970,8 @@ function setMode(m) {
     mode = m;
     document.getElementById('btn-single').classList.toggle('active', m === 'single');
     document.getElementById('btn-pair').classList.toggle('active', m === 'pair');
-    document.getElementById('objective-select').classList.toggle('hidden', m !== 'single');
-    document.getElementById('height-label').style.display = m === 'single' ? '' : 'none';
+    document.getElementById('obj-group').classList.toggle('hidden', m !== 'single');
+    document.getElementById('stability-label').style.display = m === 'single' ? '' : 'none';
     document.getElementById('pair-controls').classList.toggle('hidden', m !== 'pair');
     document.getElementById('sphere-overlay').style.display = m === 'single' ? '' : 'none';
     if (m !== 'single') clearOverlay();
@@ -1038,15 +985,18 @@ document.getElementById('btn-pair').addEventListener('click', () => setMode('pai
 document.getElementById('btn-back').addEventListener('click', () => { if (currentIndex > 0) { currentIndex--; loadModel(currentIndex); } });
 document.getElementById('btn-next').addEventListener('click', () => { if (currentIndex < models.length - 1) { currentIndex++; loadModel(currentIndex); } });
 document.getElementById('objective-select').addEventListener('change', () => {
+    updateObjTooltip();
     if (mode === 'single' && models.length > 0) {
         const obj = document.getElementById('objective-select').value;
         if (cachedLeftParsed) showMesh('panel-left', cachedLeftParsed, obj);
-        updateOverlaySphere(obj);
+        cachedCandidateData = null;
+        clearOverlay();
         runSingleOptimize(models[currentIndex].name);
     }
 });
-document.getElementById('height-slider').addEventListener('input', () => {
-    applyHeightConstraint();
+updateObjTooltip(); // set initial description on page load
+document.getElementById('stability-slider').addEventListener('input', () => {
+    applyStabilityConstraint();
 });
 document.getElementById('obj-a').addEventListener('change', () => {
     if (mode === 'pair' && models.length > 0) runParetoAnalysis(models[currentIndex].name);

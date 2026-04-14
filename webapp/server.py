@@ -93,11 +93,12 @@ def _overhang_analysis(verts, faces, normals, angle=45.0):
 
 
 def _pack_mesh_binary(verts, faces, normals, oh_indices, pillar_centroids, z_min,
-                      n_faces_original=0, extra_floats=None, pillar_areas=None):
+                      n_faces_original=0, extra_floats=None, pillar_areas=None,
+                      candidates=None, obj_values=None, stab_values=None):
     """Pack mesh data into a binary buffer.
 
     Layout:
-      Header (7 uint32):  n_verts, n_faces, n_oh, n_pillars, n_faces_original, extra_count, reserved
+      Header (7 uint32):  n_verts, n_faces, n_oh, n_pillars, n_faces_original, extra_count, n_candidates
       extra_floats:       extra_count float32 values (e.g. original_value, optimized_value)
       z_min:              1 float32
       vertices:           n_verts * 3 float32
@@ -106,6 +107,10 @@ def _pack_mesh_binary(verts, faces, normals, oh_indices, pillar_centroids, z_min
       oh_indices:         n_oh int32
       pillar_centroids:   n_pillars * 3 float32
       pillar_areas:       n_pillars float32
+      [if n_candidates > 0:]
+      candidate_gravities:  n_candidates * 3 float32
+      candidate_obj_values: n_candidates float32
+      candidate_stab_values: n_candidates float32
     """
     buf = io.BytesIO()
     n_verts = len(verts)
@@ -114,16 +119,17 @@ def _pack_mesh_binary(verts, faces, normals, oh_indices, pillar_centroids, z_min
     n_pillars = len(pillar_centroids)
     extra = extra_floats if extra_floats is not None else []
     extra_count = len(extra)
+    n_candidates = len(candidates) if candidates is not None else 0
 
-    # Header
+    # Header (n_candidates stored in previously-reserved field)
     buf.write(struct.pack('<7I', n_verts, n_faces, n_oh, n_pillars,
-                          n_faces_original, extra_count, 0))
+                          n_faces_original, extra_count, n_candidates))
     # Extra floats
     for v in extra:
         buf.write(struct.pack('<f', v))
     # z_min
     buf.write(struct.pack('<f', z_min))
-    # Data arrays
+    # Mesh arrays
     buf.write(verts.astype(np.float32).tobytes())
     buf.write(faces.astype(np.int32).tobytes())
     buf.write(normals.astype(np.float32).tobytes())
@@ -131,6 +137,11 @@ def _pack_mesh_binary(verts, faces, normals, oh_indices, pillar_centroids, z_min
     if n_pillars > 0:
         buf.write(pillar_centroids.astype(np.float32).tobytes())
         buf.write(pillar_areas.astype(np.float32).tobytes())
+    # Candidate data (for client-side stability filtering)
+    if n_candidates > 0:
+        buf.write(candidates.astype(np.float32).tobytes())
+        buf.write(obj_values.astype(np.float32).tobytes())
+        buf.write(stab_values.astype(np.float32).tobytes())
 
     return buf.getvalue()
 
@@ -186,47 +197,32 @@ def optimize(req: OptimizeRequest):
     opt_areas = np.linalg.norm(np.cross(v1 - v0, v2 - v0), axis=1) / 2
 
     g_z = np.array([[0.0, 0.0, 1.0]])
+    candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
 
     if req.objective == "overhang":
-        candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
-        oh = overhang(on, opt_areas, candidates)
-        best_idx = np.argmin(oh)
-        best_g = candidates[best_idx]
+        obj_values = overhang(on, opt_areas, candidates)
         orig_val = float(overhang(on, opt_areas, g_z)[0])
-        opt_val = float(oh[best_idx])
 
     elif req.objective == "support_volume":
-        candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
-        sv = support_volume(on, opt_areas, ov, of, candidates)
-        best_idx = np.argmin(sv)
-        best_g = candidates[best_idx]
+        obj_values = support_volume(on, opt_areas, ov, of, candidates)
         orig_val = float(support_volume(on, opt_areas, ov, of, g_z)[0])
-        opt_val = float(sv[best_idx])
 
     elif req.objective == "surface_quality":
-        candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
         critical_faces = np.arange(len(of))
-        sq = surface_quality(on, opt_areas, candidates, critical_faces)
-        best_idx = np.argmin(sq)
-        best_g = candidates[best_idx]
+        obj_values = surface_quality(on, opt_areas, candidates, critical_faces)
         orig_val = float(surface_quality(on, opt_areas, g_z, critical_faces)[0])
-        opt_val = float(sq[best_idx])
-
-    elif req.objective == "stability":
-        candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
-        stab = stability(ov, of, candidates)
-        best_idx = np.argmin(stab)
-        best_g = candidates[best_idx]
-        orig_val = float(stability(ov, of, g_z)[0])
-        opt_val = float(stab[best_idx])
 
     else:  # build_height
-        candidates = fibonacci_sphere(N_SAMPLES_SINGLE)
-        bh = build_height(ov, candidates)
-        best_idx = np.argmin(bh)
-        best_g = candidates[best_idx]
+        obj_values = build_height(ov, candidates)
         orig_val = float(build_height(ov, g_z)[0])
-        opt_val = float(bh[best_idx])
+
+    # Always compute stability for all candidates (used as client-side constraint)
+    stab_values = stability(ov, of, candidates).astype(np.float32)
+
+    # Unconstrained best (slider starts at 0%)
+    best_idx = int(np.argmin(obj_values))
+    best_g = candidates[best_idx]
+    opt_val = float(obj_values[best_idx])
 
     # Rotate render mesh
     q = sphere_to_quaternion(best_g)
@@ -251,11 +247,14 @@ def optimize(req: OptimizeRequest):
         n_faces_original=len(mesh.faces),
         extra_floats=[orig_val, opt_val],
         pillar_areas=pillar_areas,
+        candidates=candidates.astype(np.float32),
+        obj_values=obj_values.astype(np.float32),
+        stab_values=stab_values,
     )
     return Response(content=data, media_type="application/octet-stream")
 
 
-OBJECTIVES = ("overhang", "support_volume", "build_height", "surface_quality", "stability")
+OBJECTIVES = ("overhang", "support_volume", "build_height", "surface_quality")
 
 
 def _eval_objective(name, on, opt_areas, ov, of, candidates):
